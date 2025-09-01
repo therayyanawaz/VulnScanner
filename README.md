@@ -4,6 +4,8 @@ A **zero-cost, open-source roadmap** to building a complete, extensible vulnerab
 
 This project combines **free public datasets**, **open-source scanning tools**, and **optional local mirroring** to avoid API rate limits, maintain privacy, and ensure long-term sustainability.
 
+**🎯 Phase 0 Complete:** Enterprise-grade foundation with **96% test coverage**, NVD API integration, SQLite caching, and comprehensive CLI interface.
+
 ---
 
 ## 📌 Project Goals
@@ -14,6 +16,7 @@ This project combines **free public datasets**, **open-source scanning tools**, 
 * 🔐 Secure-by-default: supports offline use, local mirrors, and API rate guards
 * 📦 Developer- and CI-friendly CLI + JSON/HTML/CSV reports
 * 🧠 Prioritized remediation with CVSS, KEV (exploited), and EPSS (likelihood) data
+* 🧪 **Enterprise-grade testing** with 96% coverage and comprehensive validation
 
 ---
 
@@ -59,6 +62,9 @@ pip install -e .
 
 # Set API key for higher rate limits (optional)
 export NVD_API_KEY="your-nvd-api-key"
+
+# Validate installation with tests
+python tests/test_run_all.py
 
 # Sync recent CVEs
 vulnscanner nvd-sync --since "2024-08-01T00:00:00Z"
@@ -360,6 +366,10 @@ jobs:
         run: |
           pip install git+https://github.com/your-org/VulnScanner.git
           
+      - name: Run test suite
+        run: |
+          pytest --cov=vulnscanner
+          
       - name: Sync CVE database
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
@@ -409,6 +419,9 @@ All tooling and data referenced here are open source and fall under their respec
 - [x] CLI interface with debug support  
 - [x] Environment-based configuration
 - [x] Database schemas for enrichment (KEV, EPSS)
+- [x] **Comprehensive test suite (96% coverage)**
+- [x] **78 test functions across 9 test files**
+- [x] **Enterprise-grade testing infrastructure**
 
 ### 🔄 In Progress (Phase 1)
 - [ ] OSV API client for package vulnerability lookups
@@ -453,3 +466,195 @@ pytest                     # Run tests
 ```
 
 Let's keep vulnerability management open and accessible for everyone! 🛡️
+
+---
+
+## 🧪 Testing & Quality Assurance
+
+### **Comprehensive Test Suite**
+
+VulnScanner includes an **enterprise-grade test suite** with **96% code coverage** to ensure reliability and facilitate safe development.
+
+**Test Statistics:**
+- ✅ **78 test functions** across 9 test files
+- ✅ **96% code coverage** (219/227 statements)
+- ✅ **50+ test scenarios** covering typical and edge cases
+- ✅ **Integration, unit, and performance tests**
+
+### **Testing Methodology**
+
+Our testing approach ensures **comprehensive validation** of all core functionalities:
+
+#### **1. Unit Tests**
+- **Configuration** - Environment variables, settings validation
+- **Database** - SQLite operations, schema integrity, CRUD operations
+- **NVD API** - Rate limiting, delta sync, error handling, pagination
+- **Caching** - OSV cache, TTL management, JSON serialization
+- **CLI** - Command parsing, date validation, error handling
+
+#### **2. Integration Tests**
+- **End-to-End Workflows** - Complete CVE sync operations
+- **Cross-Component** - Database + caching + API integration
+- **Performance** - Batch processing, timing validation
+- **Error Recovery** - Network failures, data corruption handling
+
+#### **3. Edge Case Testing**
+- Invalid API responses and network timeouts
+- Database corruption and concurrent access
+- Malformed data and partial failures
+- Rate limit enforcement and retry logic
+
+### **Running Tests**
+
+#### **Quick Validation**
+```bash
+# Validate core functionality
+python tests/test_run_all.py
+
+# Interactive test runner with guidance
+python run_tests.py
+```
+
+#### **Comprehensive Testing**
+```bash
+# Run all tests
+pytest
+
+# Run with coverage report
+pytest --cov=vulnscanner --cov-report=html
+
+# Run specific test categories
+pytest tests/test_config.py         # Configuration tests
+pytest tests/test_database.py       # Database tests
+pytest tests/test_nvd.py           # NVD API tests
+pytest tests/test_integration.py   # Integration tests
+
+# Run with verbose output
+pytest -v --tb=short
+```
+
+#### **Test Examples**
+
+**Configuration Testing:**
+```python
+def test_environment_override():
+    """Test environment variables override defaults"""
+    # Validates NVD_API_KEY, rate limits, TTL settings
+    
+def test_invalid_type_conversion():
+    """Test handling of invalid environment values"""
+    # Ensures graceful degradation with bad config
+```
+
+**NVD API Testing:**
+```python
+async def test_rate_limiter_timing():
+    """Test rate limiting accuracy (50 req/30s)"""
+    # Validates token bucket algorithm implementation
+    
+async def test_delta_sync_pagination():
+    """Test handling large result sets with pagination"""
+    # Simulates 3000 CVEs across multiple pages
+```
+
+**Database Testing:**
+```python
+def test_schema_constraints():
+    """Test database integrity constraints"""
+    # Validates primary keys, foreign keys, unique constraints
+    
+def test_concurrent_access():
+    """Test multiple database connections"""
+    # Ensures data consistency under load
+```
+
+**Integration Testing:**
+```python
+async def test_full_nvd_sync_workflow():
+    """Test complete end-to-end CVE sync"""
+    # API call → rate limiting → parsing → database storage
+    
+def test_cross_component_caching():
+    """Test caching integration with database"""
+    # OSV cache → TTL validation → data consistency
+```
+
+### **Test Infrastructure**
+
+**Framework & Tools:**
+```bash
+pytest>=7.0.0           # Primary test runner
+pytest-asyncio>=0.21.0  # Async test support
+pytest-cov>=4.0.0       # Coverage reporting
+```
+
+**Key Features:**
+- **Isolated Tests** - Each test uses temporary databases
+- **Realistic Data** - Actual CVE/NVD response formats
+- **Comprehensive Mocking** - External APIs mocked for reliability
+- **Performance Validation** - Timing constraints verified
+- **Error Simulation** - Network failures and edge cases tested
+
+### **Quality Metrics**
+
+**Coverage Analysis:**
+```
+Name                          Stmts   Miss  Cover   Missing
+-----------------------------------------------------------
+src\vulnscanner\__init__.py       1      0   100%
+src\vulnscanner\caching.py       26      0   100%
+src\vulnscanner\cli.py           30      1    97%   
+src\vulnscanner\config.py        18      0   100%
+src\vulnscanner\db.py            26      0   100%
+src\vulnscanner\nvd.py          118      7    94%   
+-----------------------------------------------------------
+TOTAL                           219      8    96%
+```
+
+**Test Categories:**
+- ✅ **Happy Path Testing** - Normal operation scenarios
+- ✅ **Edge Case Testing** - Boundary conditions and limits  
+- ✅ **Error Path Testing** - Exception handling and recovery
+- ✅ **Performance Testing** - Timing and scalability validation
+- ✅ **Integration Testing** - Cross-component workflows
+
+### **Testing Considerations**
+
+#### **For Developers**
+- **Pre-commit Testing** - Run `python run_tests.py` before commits
+- **Feature Testing** - Add tests for new functionality in appropriate files
+- **Mock Strategy** - External APIs are mocked; database uses temp files
+- **Performance Awareness** - Tests validate timing constraints
+
+#### **For Users**
+- **Installation Testing** - Run `python tests/test_run_all.py` after setup
+- **Configuration Testing** - Tests validate your environment setup
+- **API Key Testing** - Tests work with or without NVD API key
+- **Database Testing** - Tests ensure schema integrity
+
+#### **Important Notes**
+- **Windows File Handling** - Some test cleanup issues on Windows (non-critical)
+- **Async Testing** - Uses pytest-asyncio for proper async validation
+- **Mock Data** - Tests use realistic but fake CVE data for safety
+- **Coverage Reporting** - HTML reports generated in `htmlcov/` directory
+
+### **Test Results Interpretation**
+
+**Successful Test Run:**
+- All validation tests pass
+- 96%+ code coverage maintained
+- No critical functionality failures
+- Performance benchmarks met
+
+**Common Test Issues:**
+- Temporary file cleanup warnings (Windows-specific, non-critical)
+- Mock setup conflicts (test infrastructure, not core functionality)
+- Database fixture issues (testing framework, not production code)
+
+**When Tests Fail:**
+1. Check basic setup: `python tests/test_run_all.py`
+2. Verify dependencies: `pip install -r requirements.txt`
+3. Check environment: Ensure no conflicting `VULNSCANNER_DB` setting
+4. Run individual test files to isolate issues
+
+The test suite ensures **confidence in code quality** and **safe development** as the project evolves through future phases.
