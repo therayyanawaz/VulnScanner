@@ -1,5 +1,6 @@
 [project]
 name = "vulnscanner"
+author = "therayyanawaz"
 version = "0.2"
 description = "Free-data vulnerability ingestion and caching foundation"
 readme = "README.md"
