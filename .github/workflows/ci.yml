@@ -1,0 +1,376 @@
+name: 🔄 Continuous Integration
+
+# Workflow triggers
+on:
+  # Run on pull requests
+  pull_request:
+    branches: [main, develop, release/*]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - 'requirements.txt'
+      - '.github/workflows/**'
+  
+  # Run on pushes to main branches (but not tags)
+  push:
+    branches: [main, develop]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - 'requirements.txt'
+      - '.github/workflows/**'
+  
+  # Manual trigger
+  workflow_dispatch:
+
+# Global environment variables
+env:
+  PYTHON_VERSION: '3.11'
+  PACKAGE_NAME: 'vulnscanner'
+
+# Cancel previous runs for the same PR/branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ================================
+  # Job 1: Code Quality & Linting
+  # ================================
+  code-quality:
+    name: 🔍 Code Quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+      
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: 📦 Install Linting Tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install black isort flake8 mypy bandit safety
+      
+      - name: 🎨 Check Code Formatting
+        run: |
+          echo "::group::Black Code Formatting"
+          black --check --diff src/ tests/
+          echo "::endgroup::"
+          
+          echo "::group::Import Sorting"
+          isort --check-only --diff src/ tests/
+          echo "::endgroup::"
+      
+      - name: 🔍 Lint Code
+        run: |
+          echo "::group::Flake8 Linting"
+          flake8 src/ tests/ --max-line-length=100 --extend-ignore=E203,W503 --statistics
+          echo "::endgroup::"
+      
+      - name: 🏷️ Type Checking
+        run: |
+          echo "::group::MyPy Type Checking"
+          mypy src/ --ignore-missing-imports --show-error-codes
+          echo "::endgroup::"
+      
+      - name: 🔒 Security Scan
+        run: |
+          echo "::group::Bandit Security Scan"
+          bandit -r src/ -f txt
+          echo "::endgroup::"
+
+  # ================================
+  # Job 2: Test Matrix
+  # ================================
+  test-matrix:
+    name: 🧪 Test Python ${{ matrix.python-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    
+    strategy:
+      matrix:
+        os: [ubuntu-22.04, windows-2022, macos-12]
+        python-version: ['3.10', '3.11', '3.12']
+      fail-fast: false
+    
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+      
+      - name: 🐍 Setup Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+      
+      - name: 📦 Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pytest pytest-asyncio pytest-cov pytest-xdist
+      
+      - name: 🧪 Run Tests
+        run: |
+          pytest \
+            --cov=${{ env.PACKAGE_NAME }} \
+            --cov-report=xml \
+            --cov-report=term-missing \
+            --junitxml=pytest-results.xml \
+            -v \
+            --tb=short \
+            --maxfail=10 \
+            -n auto
+      
+      - name: 📊 Upload Coverage
+        uses: codecov/codecov-action@v3
+        if: matrix.python-version == '3.11' && matrix.os == 'ubuntu-latest'
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: coverage-${{ matrix.python-version }}-${{ matrix.os }}
+          fail_ci_if_error: false
+
+  # ================================
+  # Job 3: Installation Test
+  # ================================
+  installation-test:
+    name: 📦 Installation Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: test-matrix
+    
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+      
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: 🏗️ Build Package
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build
+      
+      - name: 📦 Test Installation
+        run: |
+          # Install from wheel
+          pip install dist/*.whl
+          
+          # Test CLI functionality
+          vulnscanner --help
+          python -m vulnscanner.cli --help
+          
+          # Test import
+          python -c "import vulnscanner; print('✅ Package installed successfully')"
+      
+      - name: ✅ Validate Core Functions
+        run: |
+          # Run validation script
+          python tests/test_run_all.py
+
+  # ================================
+  # Job 4: Performance Benchmark
+  # ================================
+  performance-benchmark:
+    name: ⚡ Performance Benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: test-matrix
+    if: github.event_name == 'pull_request'
+    
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+      
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: 📦 Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pytest pytest-benchmark
+      
+      - name: ⚡ Run Performance Tests
+        run: |
+          # Run performance-sensitive tests
+          python -c "
+          import time
+          from vulnscanner.nvd import RateLimiter
+          
+          print('🧪 Testing rate limiter performance...')
+          start = time.time()
+          limiter = RateLimiter(100)
+          elapsed = time.time() - start
+          
+          if elapsed < 0.1:
+              print(f'✅ Rate limiter initialization: {elapsed:.4f}s')
+          else:
+              print(f'⚠️ Rate limiter slow: {elapsed:.4f}s')
+          "
+          
+          # Database performance test
+          python -c "
+          import tempfile
+          import time
+          import os
+          from vulnscanner.db import ensure_database
+          
+          print('🧪 Testing database performance...')
+          with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as f:
+              db_path = f.name
+          
+          os.environ['VULNSCANNER_DB'] = db_path
+          start = time.time()
+          ensure_database()
+          elapsed = time.time() - start
+          
+          if elapsed < 1.0:
+              print(f'✅ Database creation: {elapsed:.4f}s')
+          else:
+              print(f'⚠️ Database creation slow: {elapsed:.4f}s')
+          
+          os.unlink(db_path)
+          "
+
+  # ================================
+  # Job 5: Documentation Check
+  # ================================
+  documentation-check:
+    name: 📚 Documentation Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+      
+      - name: 🔍 Check README
+        run: |
+          # Verify README has required sections
+          if ! grep -q "## 🧪 Testing & Quality Assurance" README.md; then
+            echo "❌ README missing testing section"
+            exit 1
+          fi
+          
+          if ! grep -q "Quick Start" README.md; then
+            echo "❌ README missing quick start section"
+            exit 1
+          fi
+          
+          echo "✅ README documentation check passed"
+      
+      - name: 🔍 Check Code Documentation
+        run: |
+          # Check for docstrings in main modules
+          python -c "
+          import ast
+          import sys
+          
+          def check_docstrings(filepath):
+              with open(filepath, 'r') as f:
+                  tree = ast.parse(f.read())
+              
+              for node in ast.walk(tree):
+                  if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
+                      if not ast.get_docstring(node):
+                          print(f'⚠️ Missing docstring: {node.name} in {filepath}')
+              
+              print(f'✅ Docstring check completed for {filepath}')
+          
+          # Check main modules
+          import os
+          src_dir = 'src/vulnscanner'
+          for file in os.listdir(src_dir):
+              if file.endswith('.py') and file != '__init__.py':
+                  check_docstrings(os.path.join(src_dir, file))
+          "
+
+  # ================================
+  # Job 6: Dependency Security
+  # ================================
+  dependency-security:
+    name: 🔒 Dependency Security
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+      
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: 📦 Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install safety pip-audit
+      
+      - name: 🔍 Security Audit
+        run: |
+          echo "::group::Safety Check"
+          safety check --json || true
+          echo "::endgroup::"
+          
+          echo "::group::Pip Audit"
+          pip-audit --format=json || true
+          echo "::endgroup::"
+
+  # ================================
+  # Job 7: Summary
+  # ================================
+  ci-summary:
+    name: 📋 CI Summary
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [code-quality, test-matrix, installation-test, performance-benchmark, documentation-check, dependency-security]
+    if: always()
+    
+    steps:
+      - name: 📋 Generate Summary
+        run: |
+          echo "## 🔄 CI Workflow Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Code Quality | ${{ needs.code-quality.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Test Matrix | ${{ needs.test-matrix.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Installation Test | ${{ needs.installation-test.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Performance Benchmark | ${{ needs.performance-benchmark.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Documentation Check | ${{ needs.documentation-check.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Dependency Security | ${{ needs.dependency-security.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Determine overall status
+          if [[ "${{ needs.code-quality.result }}" == "success" && \
+                "${{ needs.test-matrix.result }}" == "success" && \
+                "${{ needs.installation-test.result }}" == "success" ]]; then
+            echo "✅ **All critical checks passed!**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Some checks failed. Please review the results above.**" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🔗 **Next Steps:**" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "- Review and address any failed checks" >> $GITHUB_STEP_SUMMARY
+            echo "- Merge when all checks pass" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- Checks complete for push to ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          fi
