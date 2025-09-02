@@ -1,0 +1,136 @@
+name: 🚀 Feature Request
+description: Suggest an idea for VulnScanner
+title: "[FEATURE] "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a new feature! 🚀
+        
+        Please provide as much detail as possible to help us understand your request.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission Checks
+      description: Please confirm you have completed these steps
+      options:
+        - label: I have searched existing issues and discussions to ensure this is not a duplicate
+          required: true
+        - label: I have reviewed the project roadmap in the README
+          required: true
+        - label: This feature aligns with the project's goal of being free and open-source
+          required: true
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Feature Category
+      description: Which area does this feature relate to?
+      options:
+        - "Data Sources (NVD, OSV, CISA KEV, EPSS)"
+        - "Scanning & Detection"
+        - "Database & Caching"
+        - "CLI & User Interface"
+        - "Reporting & Output"
+        - "Performance & Optimization"
+        - "Security & Privacy"
+        - "Testing & Quality"
+        - "Documentation"
+        - "Other"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority Level
+      description: How important is this feature to you?
+      options:
+        - "Low - Nice to have"
+        - "Medium - Would improve workflow"
+        - "High - Significant impact"
+        - "Critical - Blocking current usage"
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What problem does this feature solve?
+      placeholder: |
+        Is your feature request related to a problem? Please describe.
+        Example: "I'm frustrated when..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution you'd like
+      placeholder: |
+        A clear and concise description of what you want to happen.
+        Include any specific implementation details if you have them.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternative Solutions
+      description: Describe alternatives you've considered
+      placeholder: |
+        A clear description of any alternative solutions or features you've considered.
+        This could include workarounds you're currently using.
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact & Benefits
+      description: How would this feature benefit VulnScanner users?
+      placeholder: |
+        - Who would benefit from this feature?
+        - How would it improve the user experience?
+        - Would it help achieve the project's free/open-source goals?
+
+  - type: textarea
+    id: implementation
+    attributes:
+      label: Implementation Ideas
+      description: Any thoughts on how this could be implemented?
+      placeholder: |
+        - Technical approach
+        - Required dependencies
+        - Breaking changes
+        - Testing considerations
+        - Documentation needs
+
+  - type: textarea
+    id: examples
+    attributes:
+      label: Usage Examples
+      description: Provide examples of how this feature would be used
+      render: shell
+      placeholder: |
+        # Example CLI usage
+        vulnscanner new-feature --option value
+        
+        # Example configuration
+        NEW_FEATURE_ENABLED=true
+        
+        # Example output
+        Found 5 vulnerabilities using new feature
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Add any other context about the feature request
+      placeholder: |
+        - Links to similar features in other tools
+        - Screenshots or mockups
+        - Related issues or discussions
+        - Any other relevant information
