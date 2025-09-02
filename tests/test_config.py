@@ -14,7 +14,7 @@ from vulnscanner.config import Settings
 
 class TestSettings:
     """Test configuration management."""
-
+    
     def test_default_values(self):
         """
         Test Case: Default configuration values
