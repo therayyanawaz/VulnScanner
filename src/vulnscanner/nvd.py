@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -63,8 +64,9 @@ class NvdClient:
     @retry(
         reraise=True,
         retry=retry_if_exception_type((httpx.HTTPError,)),
-        wait=wait_exponential(multiplier=1, min=1, max=30),
+        wait=wait_exponential(multiplier=2, min=5, max=120),  # More conservative for rate limits
         stop=stop_after_attempt(5),
+        retry_error_callback=lambda retry_state: print(f"⚠️ Retrying NVD request (attempt {retry_state.attempt_number}): {retry_state.outcome.exception()}")
     )
     async def fetch_page(self, start: datetime, end: datetime, start_index: int = 0) -> dict[str, Any]:
         await self.rate_limiter.wait()
@@ -78,6 +80,10 @@ class NvdClient:
         if resp.status_code == 404:
             # No CVEs in this time range
             return {"totalResults": 0, "resultsPerPage": 0, "vulnerabilities": []}
+        elif resp.status_code == 429:
+            # Rate limited - add extra delay before raising
+            print(f"⚠️ Rate limited by NVD API. Waiting extra 30 seconds...")
+            await asyncio.sleep(30)
         resp.raise_for_status()
         return resp.json()
 
