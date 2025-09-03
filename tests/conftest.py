@@ -84,7 +84,7 @@ def test_settings(temp_db) -> Settings:
         database_path=temp_db,  # Use the isolated temp database
         nvd_api_key=None,
         user_agent="VulnScanner-Test/0.0.1",
-        nvd_max_per_30s=5,  # Conservative for tests
+        nvd_max_per_30s=50,  # Conservative for tests
         nvd_max_days_per_request=1,  # Small windows for tests
         osv_ttl_hours=1,
         kev_ttl_hours=1,
@@ -95,16 +95,18 @@ def test_settings(temp_db) -> Settings:
 @pytest.fixture
 def isolated_test_settings() -> Settings:
     """Create test settings with in-memory database for isolated tests."""
-    return Settings(
+    settings = Settings(
         database_path=":memory:",
         nvd_api_key=None,
         user_agent="VulnScanner-Test/0.0.1",
-        nvd_max_per_30s=5,  # Conservative for tests
+        nvd_max_per_30s=50,  # Conservative for tests
         nvd_max_days_per_request=1,  # Small windows for tests
         osv_ttl_hours=1,
         kev_ttl_hours=1,
         epss_ttl_hours=1,
     )
+    ensure_database()
+    return settings
 
 
 @pytest.fixture
