@@ -52,25 +52,30 @@ This project combines **free public datasets**, **open-source scanning tools**, 
 
 **Quick Start:**
 ```bash
-# Clone and setup
-git clone <repo>
+# 1. Clone the repository
+git clone https://github.com/therayyanawaz/VulnScanner.git
 cd VulnScanner
+
+# 2. Create and activate virtual environment
 python -m venv .venv
-.venv/Scripts/activate  # Windows
-source .venv/bin/activate  # Linux/Mac
+
+# On Windows:
+.venv\Scripts\activate
+# On Linux/Mac:
+# source .venv/bin/activate
+
+# 3. Install the package
 pip install -e .
 
-# Set API key for higher rate limits (optional)
-export NVD_API_KEY="your-nvd-api-key"
+# 4. Set API key for higher rate limits (optional but recommended)
+# Get free key from: https://nvd.nist.gov/developers/request-an-api-key
+export NVD_API_KEY="your-nvd-api-key-here"
 
-# Validate installation with tests
+# 5. Validate installation with tests
 python tests/test_run_all.py
 
-# Sync recent CVEs
+# 6. Sync recent CVEs to get started
 vulnscanner nvd-sync --since "2024-08-01T00:00:00Z"
-
-# Or use Python module
-python -m vulnscanner.cli nvd-sync --since "2024-01-01T00:00:00Z"
 ```
 
 ### ✅ **Phase 1: MVP Dependency Scanning**
@@ -188,7 +193,7 @@ KEV_TTL_HOURS="24"                 # CISA KEV cache lifetime
 EPSS_TTL_HOURS="720"               # EPSS cache lifetime (30 days)
 
 # User agent for API requests
-VULNSCANNER_UA="VulnScanner/0.0.1 (+https://example.local)"
+VULNSCANNER_UA="VulnScanner/0.0.1 (+https://github.com/therayyanawaz/VulnScanner)"
 ```
 
 ### Technical Implementation Details
@@ -287,34 +292,44 @@ VULNSCANNER_UA="VulnScanner/0.0.1 (+https://example.local)"
 
 ## 🚀 Getting Started
 
+### Prerequisites
+
+Before you begin, ensure you have the following installed on your system:
+- **Python 3.8 or higher** - [Download from python.org](https://www.python.org/downloads/)
+- **pip** (included with Python)
+- **Git** - [Download from git-scm.com](https://git-scm.com/)
+
 ### Phase 0: Data Foundation Setup
 
 ```bash
-# 1. Clone and setup virtual environment
-git clone <repository-url> VulnScanner
+# 1. Clone the repository
+git clone https://github.com/therayyanawaz/VulnScanner.git
 cd VulnScanner
+
+# 2. Create and activate virtual environment
 python -m venv .venv
 
-# Windows
+# On Windows:
 .venv\Scripts\activate
-# Linux/Mac  
+# On Linux/Mac:
 source .venv/bin/activate
 
-# 2. Install dependencies
+# 3. Install the package with dependencies
 pip install -e .
 
-# 3. Optional: Set NVD API key for higher rate limits
+# 4. Optional: Set NVD API key for higher rate limits
 # Get free key from: https://nvd.nist.gov/developers/request-an-api-key
 export NVD_API_KEY="your-nvd-api-key-here"
 
-# 4. Initialize database and sync recent CVEs
+# 5. Initialize database and sync recent CVEs
 vulnscanner nvd-sync --since "2024-01-01T00:00:00Z"
 
-# 5. Check what was synced
+# 6. Verify the setup worked
 python -c "
 import sqlite3
 conn = sqlite3.connect('vulnscanner.db')
-print(f'CVEs in database: {conn.execute(\"SELECT COUNT(*) FROM cves\").fetchone()[0]}')
+count = conn.execute('SELECT COUNT(*) FROM cves').fetchone()[0]
+print(f'CVEs synced to database: {count}')
 conn.close()
 "
 ```
@@ -364,7 +379,7 @@ jobs:
       
       - name: Install VulnScanner
         run: |
-          pip install git+https://github.com/your-org/VulnScanner.git
+          pip install git+https://github.com/therayyanawaz/VulnScanner.git
           
       - name: Run test suite
         run: |
@@ -457,12 +472,23 @@ Contributions welcome! This project aims to democratize vulnerability management
 
 **Development setup:**
 ```bash
-git clone <repo>
+# 1. Clone the repository
+git clone https://github.com/therayyanawaz/VulnScanner.git
 cd VulnScanner
+
+# 2. Create and activate virtual environment
 python -m venv .venv
-source .venv/bin/activate  # or .venv\Scripts\activate on Windows
-pip install -e ".[dev]"    # Install with development dependencies
-pytest                     # Run tests
+
+# On Windows:
+.venv\Scripts\activate
+# On Linux/Mac:
+source .venv/bin/activate
+
+# 3. Install with development dependencies
+pip install -e ".[dev]"
+
+# 4. Run the test suite
+pytest
 ```
 
 Let's keep vulnerability management open and accessible for everyone! 🛡️
@@ -658,3 +684,57 @@ TOTAL                           219      8    96%
 4. Run individual test files to isolate issues
 
 The test suite ensures **confidence in code quality** and **safe development** as the project evolves through future phases.
+
+---
+
+## 🔧 Troubleshooting
+
+### Common Setup Issues
+
+**Issue: `vulnscanner` command not found**
+```bash
+# Solution 1: Ensure virtual environment is activated
+source .venv/bin/activate  # Linux/Mac
+.venv\Scripts\activate     # Windows
+
+# Solution 2: Use Python module instead
+python -m vulnscanner.cli --help
+```
+
+**Issue: Permission errors during installation**
+```bash
+# Solution: Use virtual environment (recommended)
+python -m venv .venv
+source .venv/bin/activate  # or .venv\Scripts\activate on Windows
+pip install -e .
+```
+
+**Issue: Database permission errors**
+```bash
+# Solution: Check database file permissions
+ls -la vulnscanner.db  # Linux/Mac
+# Ensure current user has read/write access
+```
+
+**Issue: API rate limiting errors**
+```bash
+# Solution: Get a free NVD API key for higher limits
+# Visit: https://nvd.nist.gov/developers/request-an-api-key
+export NVD_API_KEY="your-api-key-here"
+```
+
+**Issue: Tests failing**
+```bash
+# Solution: Run the simple test runner first
+python tests/test_run_all.py
+
+# If still failing, check dependencies
+pip install -r requirements.txt
+```
+
+### Getting Help
+
+- Check the [Issues](https://github.com/therayyanawaz/VulnScanner/issues) page for known problems
+- Run tests to validate your setup: `python tests/test_run_all.py`
+- Use debug mode for verbose output: `vulnscanner nvd-sync --debug`
+- Ensure you're using Python 3.8 or higher: `python --version`
