@@ -21,18 +21,20 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - name: Enable debug logging
-      run: echo "ACTIONS_STEP_DEBUG=true" >> $GITHUB_ENV
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
     - name: Install dependencies
+      env:
+        PYTHONPATH: ${{ github.workspace }}/src
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install pytest pytest-asyncio pytest-httpx
     - name: Run tests
+      env:
+        PYTHONPATH: ${{ github.workspace }}/src
       run: |
         pytest
   
