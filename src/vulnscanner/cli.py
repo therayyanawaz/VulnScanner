@@ -23,7 +23,7 @@ def nvd_sync(since_str: Optional[str], until_str: Optional[str], debug: bool) ->
     if debug:
         import logging
 
-        logging.basicConfig(level=logging.DEBUG)
+                 logging.basicConfig(level=logging.DEBUG)
 
     # Show rate limiting info
     from .config import settings

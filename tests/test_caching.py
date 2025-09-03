@@ -222,8 +222,7 @@ class TestOsvCaching:
         Expected: Should respect configured TTL precisely
         """
         # Set 1-hour TTL
-        # Create a new Settings object with the desired TTL
-        test_settings = test_settings.replace(osv_ttl_hours=1)
+        test_settings.osv_ttl_hours = 1
 
         with patch("vulnscanner.caching.settings", test_settings):
             # Mock current time to test TTL logic
