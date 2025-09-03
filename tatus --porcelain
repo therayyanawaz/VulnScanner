@@ -1,0 +1,42 @@
+[1mdiff --cc src/vulnscanner/cli.py[m
+[1mindex 989e3f7,75e4831..0000000[m
+[1m--- a/src/vulnscanner/cli.py[m
+[1m+++ b/src/vulnscanner/cli.py[m
+[36m@@@ -22,21 -22,23 +22,37 @@@[m [mdef main() -> None[m
+  def nvd_sync(since_str: Optional[str], until_str: Optional[str], debug: bool) -> None:[m
+      if debug:[m
+          import logging[m
+[32m+ [m
+          logging.basicConfig(level=logging.DEBUG)[m
+[32m++<<<<<<< Updated upstream[m
+[32m +    [m
+[32m +    # Show rate limiting info[m
+[32m +    from .config import settings[m
+[32m++=======[m
+[32m+ [m
+[32m+     # Show rate limiting info[m
+[32m+     from .config import settings[m
+[32m+ [m
+[32m++>>>>>>> Stashed changes[m
+      if settings.nvd_api_key:[m
+          click.echo(f"🔑 Using API key, rate limit: {settings.nvd_max_per_30s}/30s")[m
+      else:[m
+          click.echo(f"⚠️ No API key - rate limit: {settings.nvd_max_per_30s}/30s")[m
+          click.echo("💡 Get a free key at: https://nvd.nist.gov/developers/request-an-api-key")[m
+[32m++<<<<<<< Updated upstream[m
+[32m +    [m
+[32m++=======[m
+[32m+ [m
+[32m++>>>>>>> Stashed changes[m
+      ensure_database()[m
+      since = _parse_dt(since_str) if since_str else None[m
+      until = _parse_dt(until_str) if until_str else None[m
+      click.echo(f"🚀 Syncing from {since} to {until}")[m
+[32m++<<<<<<< Updated upstream[m
+[32m +    [m
+[32m++=======[m
+[32m+ [m
+[32m++>>>>>>> Stashed changes[m
+      try:[m
+          stats = asyncio.run(sync_nvd_delta(since, until))[m
+          click.echo(f"✅ Sync complete: {stats['cves']} CVEs, {stats['pages']} pages")[m
