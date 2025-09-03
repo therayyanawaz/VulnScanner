@@ -51,16 +51,20 @@ CREATE TABLE IF NOT EXISTS epss (
 """
 
 
-def ensure_database() -> None:
-    Path(settings.database_path).parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(settings.database_path) as conn:
+def ensure_database(current_settings: settings | None = None) -> None:
+    if current_settings is None:
+        current_settings = settings
+    Path(current_settings.database_path).parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(current_settings.database_path) as conn:
         conn.executescript(SCHEMA)
 
 
 @contextmanager
-def db() -> Iterator[sqlite3.Connection]:
-    ensure_database()
-    conn = sqlite3.connect(settings.database_path)
+def db(current_settings: settings | None = None) -> Iterator[sqlite3.Connection]:
+    if current_settings is None:
+        current_settings = settings
+    ensure_database(current_settings)
+    conn = sqlite3.connect(current_settings.database_path)
     try:
         yield conn
         conn.commit()
