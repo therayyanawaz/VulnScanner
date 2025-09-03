@@ -7,7 +7,6 @@ from typing import Iterator
 
 from .config import settings
 
-
 SCHEMA = """
 PRAGMA journal_mode=WAL;
 PRAGMA foreign_keys=ON;
@@ -81,5 +80,3 @@ def set_meta(key: str, value: str) -> None:
             "INSERT INTO meta(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
             (key, value),
         )
-
-

@@ -22,8 +22,9 @@ def main() -> None:
 def nvd_sync(since_str: Optional[str], until_str: Optional[str], debug: bool) -> None:
     if debug:
         import logging
-        logging.basicConfig(level=logging.DEBUG)
-    
+
+                 logging.basicConfig(level=logging.DEBUG)
+
     # Show rate limiting info
     from .config import settings
     if settings.nvd_api_key:
@@ -31,12 +32,10 @@ def nvd_sync(since_str: Optional[str], until_str: Optional[str], debug: bool) ->
     else:
         click.echo(f"⚠️ No API key - rate limit: {settings.nvd_max_per_30s}/30s")
         click.echo("💡 Get a free key at: https://nvd.nist.gov/developers/request-an-api-key")
-    
     ensure_database()
     since = _parse_dt(since_str) if since_str else None
     until = _parse_dt(until_str) if until_str else None
     click.echo(f"🚀 Syncing from {since} to {until}")
-    
     try:
         stats = asyncio.run(sync_nvd_delta(since, until))
         click.echo(f"✅ Sync complete: {stats['cves']} CVEs, {stats['pages']} pages")
@@ -59,5 +58,3 @@ def _parse_dt(s: str) -> datetime:
 
 if __name__ == "__main__":
     main()
-
-

@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from .db import db
 from .config import settings
+from .db import db
 
 
 def cache_osv_result(ecosystem: str, package: str, version: str, payload: dict[str, Any]) -> None:
@@ -48,5 +48,3 @@ def json_loads(s: str) -> Any:
     import json
 
     return json.loads(s)
-
-

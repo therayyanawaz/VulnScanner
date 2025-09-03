@@ -1,13 +1,15 @@
 """
 Pytest configuration and shared fixtures for VulnScanner tests.
 """
+
 import os
+import sqlite3
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Generator
+
 import pytest
-import sqlite3
-from datetime import datetime, timezone
 
 from vulnscanner.config import Settings
 from vulnscanner.db import ensure_database
@@ -18,15 +20,16 @@ def temp_db() -> Generator[str, None, None]:
     """Create a temporary database for testing with proper isolation."""
     # Use unique filename per test to avoid conflicts
     import uuid
+
     unique_suffix = str(uuid.uuid4())[:8]
-    
+
     with tempfile.NamedTemporaryFile(suffix=f"-{unique_suffix}.db", delete=False) as f:
         db_path = f.name
-    
+
     # Set environment variable for tests with isolation
     original_db = os.environ.get("VULNSCANNER_DB")
     os.environ["VULNSCANNER_DB"] = db_path
-    
+
     try:
         # Ensure clean database state
         if Path(db_path).exists():
@@ -37,18 +40,19 @@ def temp_db() -> Generator[str, None, None]:
         # Force close any open connections
         try:
             import sqlite3
+
             # Close any potential connections by connecting and closing
             conn = sqlite3.connect(db_path)
             conn.close()
         except:
             pass
-            
+
         # Restore environment
         if original_db:
             os.environ["VULNSCANNER_DB"] = original_db
         else:
             os.environ.pop("VULNSCANNER_DB", None)
-            
+
         # Cleanup with retries for Windows
         for attempt in range(3):
             try:
@@ -56,6 +60,7 @@ def temp_db() -> Generator[str, None, None]:
                 break
             except (OSError, PermissionError):
                 import time
+
                 time.sleep(0.1)  # Brief delay before retry
 
 
@@ -64,6 +69,7 @@ def test_settings(temp_db) -> Settings:
     """Create test settings with safe defaults using isolated temp database."""
     # Ensure database is initialized for the temp_db
     from vulnscanner.db import ensure_database
+
     original_env = os.environ.get("VULNSCANNER_DB")
     os.environ["VULNSCANNER_DB"] = temp_db
     try:
@@ -73,7 +79,7 @@ def test_settings(temp_db) -> Settings:
             os.environ["VULNSCANNER_DB"] = original_env
         else:
             os.environ.pop("VULNSCANNER_DB", None)
-    
+
     return Settings(
         database_path=temp_db,  # Use the isolated temp database
         nvd_api_key=None,
@@ -111,10 +117,7 @@ def sample_cve_data():
             "published": "2024-08-01T08:00:00.000Z",
             "vulnStatus": "Analyzed",
             "descriptions": [
-                {
-                    "lang": "en",
-                    "value": "Test vulnerability for unit testing purposes."
-                }
+                {"lang": "en", "value": "Test vulnerability for unit testing purposes."}
             ],
             "metrics": {
                 "cvssMetricV31": [
@@ -125,11 +128,11 @@ def sample_cve_data():
                             "version": "3.1",
                             "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
                             "baseScore": 9.8,
-                            "baseSeverity": "CRITICAL"
-                        }
+                            "baseSeverity": "CRITICAL",
+                        },
                     }
                 ]
-            }
+            },
         }
     }
 
@@ -150,18 +153,18 @@ def sample_nvd_response():
                     "id": "CVE-2024-TEST-001",
                     "lastModified": "2024-08-01T10:30:00.000Z",
                     "published": "2024-08-01T08:00:00.000Z",
-                    "vulnStatus": "Analyzed"
+                    "vulnStatus": "Analyzed",
                 }
             },
             {
                 "cve": {
-                    "id": "CVE-2024-TEST-002", 
+                    "id": "CVE-2024-TEST-002",
                     "lastModified": "2024-08-01T11:15:00.000Z",
                     "published": "2024-08-01T09:00:00.000Z",
-                    "vulnStatus": "Analyzed"
+                    "vulnStatus": "Analyzed",
                 }
-            }
-        ]
+            },
+        ],
     }
 
 
@@ -179,27 +182,18 @@ def sample_osv_data():
                 "details": "This is a test vulnerability for unit testing.",
                 "affected": [
                     {
-                        "package": {
-                            "ecosystem": "npm",
-                            "name": "test-package"
-                        },
+                        "package": {"ecosystem": "npm", "name": "test-package"},
                         "ranges": [
                             {
                                 "type": "SEMVER",
-                                "events": [
-                                    {"introduced": "1.0.0"},
-                                    {"fixed": "1.2.3"}
-                                ]
+                                "events": [{"introduced": "1.0.0"}, {"fixed": "1.2.3"}],
                             }
-                        ]
+                        ],
                     }
                 ],
                 "severity": [
-                    {
-                        "type": "CVSS_V3",
-                        "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
-                    }
-                ]
+                    {"type": "CVSS_V3", "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"}
+                ],
             }
         ]
     }

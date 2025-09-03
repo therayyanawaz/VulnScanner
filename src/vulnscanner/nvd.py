@@ -12,7 +12,6 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 from .config import settings
 from .db import db, get_meta, set_meta
 
-
 NVD_BASE = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 
 
@@ -66,9 +65,13 @@ class NvdClient:
         retry=retry_if_exception_type((httpx.HTTPError,)),
         wait=wait_exponential(multiplier=2, min=5, max=120),  # More conservative for rate limits
         stop=stop_after_attempt(5),
-        retry_error_callback=lambda retry_state: print(f"⚠️ Retrying NVD request (attempt {retry_state.attempt_number}): {retry_state.outcome.exception()}")
+        retry_error_callback=lambda retry_state: print(
+            f"⚠️ Retrying NVD request (attempt {retry_state.attempt_number}): {retry_state.outcome.exception()}"
+        ),
     )
-    async def fetch_page(self, start: datetime, end: datetime, start_index: int = 0) -> dict[str, Any]:
+    async def fetch_page(
+        self, start: datetime, end: datetime, start_index: int = 0
+    ) -> dict[str, Any]:
         await self.rate_limiter.wait()
         params = {
             "lastModStartDate": start.replace(tzinfo=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"),
@@ -88,7 +91,9 @@ class NvdClient:
         return resp.json()
 
 
-async def sync_nvd_delta(since: datetime | None = None, until: datetime | None = None) -> dict[str, int]:
+async def sync_nvd_delta(
+    since: datetime | None = None, until: datetime | None = None
+) -> dict[str, int]:
     # Determine window
     now = datetime.now(timezone.utc)
     last = since or _get_last_mod_time() or (now - timedelta(days=1))
@@ -177,5 +182,3 @@ def _get_last_mod_time() -> datetime | None:
 
 def _set_last_mod_time(dt: datetime) -> None:
     set_meta("nvd_last_mod", dt.replace(tzinfo=timezone.utc).isoformat())
-
-

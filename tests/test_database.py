@@ -9,11 +9,13 @@ Test scenarios:
 5. Concurrent access scenarios
 6. Data integrity and constraints
 """
+
 import sqlite3
-import pytest
 from datetime import datetime, timezone
 
-from vulnscanner.db import ensure_database, db, get_meta, set_meta
+import pytest
+
+from vulnscanner.db import db, ensure_database, get_meta, set_meta
 
 
 class TestDatabase:
@@ -26,14 +28,12 @@ class TestDatabase:
         """
         # Database should be created by temp_db fixture
         assert temp_db.endswith(".db")
-        
+
         with sqlite3.connect(temp_db) as conn:
             # Check that all tables exist
-            tables = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
+            tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
             table_names = [t[0] for t in tables]
-            
+
             expected_tables = ["meta", "cves", "osv_cache", "kev", "epss"]
             for table in expected_tables:
                 assert table in table_names, f"Table {table} not found"
@@ -47,14 +47,14 @@ class TestDatabase:
             # Test primary key constraint
             conn.execute(
                 "INSERT INTO cves (cve_id, source, json, modified) VALUES (?, ?, ?, ?)",
-                ("CVE-2024-TEST", "NVD", '{}', datetime.now(timezone.utc).isoformat())
+                ("CVE-2024-TEST", "NVD", "{}", datetime.now(timezone.utc).isoformat()),
             )
-            
+
             # Should fail on duplicate primary key
             with pytest.raises(sqlite3.IntegrityError):
                 conn.execute(
                     "INSERT INTO cves (cve_id, source, json, modified) VALUES (?, ?, ?, ?)",
-                    ("CVE-2024-TEST", "NVD", '{}', datetime.now(timezone.utc).isoformat())
+                    ("CVE-2024-TEST", "NVD", "{}", datetime.now(timezone.utc).isoformat()),
                 )
 
     def test_meta_operations(self, temp_db):
@@ -64,15 +64,15 @@ class TestDatabase:
         """
         # Test setting meta value
         set_meta("test_key", "test_value")
-        
+
         # Test retrieving meta value
         value = get_meta("test_key")
         assert value == "test_value"
-        
+
         # Test non-existent key
         value = get_meta("non_existent_key")
         assert value is None
-        
+
         # Test updating existing key
         set_meta("test_key", "updated_value")
         value = get_meta("test_key")
@@ -94,16 +94,15 @@ class TestDatabase:
                     "CVE-2024-TEST-001",
                     "NVD",
                     str(sample_cve_data),
-                    datetime.now(timezone.utc).isoformat()
-                )
+                    datetime.now(timezone.utc).isoformat(),
+                ),
             )
-            
+
             # Query CVE data
             row = conn.execute(
-                "SELECT cve_id, source FROM cves WHERE cve_id = ?",
-                ("CVE-2024-TEST-001",)
+                "SELECT cve_id, source FROM cves WHERE cve_id = ?", ("CVE-2024-TEST-001",)
             ).fetchone()
-            
+
             assert row is not None
             assert row[0] == "CVE-2024-TEST-001"
             assert row[1] == "NVD"
@@ -125,19 +124,19 @@ class TestDatabase:
                     "test-package",
                     "1.0.0",
                     datetime.now(timezone.utc).isoformat(),
-                    '{"vulns": []}'
-                )
+                    '{"vulns": []}',
+                ),
             )
-            
+
             # Query cache entry
             row = conn.execute(
                 """
                 SELECT ecosystem, package, version FROM osv_cache 
                 WHERE ecosystem = ? AND package = ? AND version = ?
                 """,
-                ("npm", "test-package", "1.0.0")
+                ("npm", "test-package", "1.0.0"),
             ).fetchone()
-            
+
             assert row is not None
             assert row == ("npm", "test-package", "1.0.0")
 
@@ -155,13 +154,13 @@ class TestDatabase:
                 """,
                 (
                     "npm",
-                    "test-package", 
+                    "test-package",
                     "1.0.0",
                     datetime.now(timezone.utc).isoformat(),
-                    '{"vulns": []}'
-                )
+                    '{"vulns": []}',
+                ),
             )
-            
+
             # Should fail on duplicate composite key
             with pytest.raises(sqlite3.IntegrityError):
                 conn.execute(
@@ -172,10 +171,10 @@ class TestDatabase:
                     (
                         "npm",
                         "test-package",
-                        "1.0.0", 
+                        "1.0.0",
                         datetime.now(timezone.utc).isoformat(),
-                        '{"vulns": []}'
-                    )
+                        '{"vulns": []}',
+                    ),
                 )
 
     def test_database_context_manager(self, temp_db):
@@ -186,26 +185,25 @@ class TestDatabase:
         # Test successful transaction
         with db() as conn:
             conn.execute(
-                "INSERT INTO meta (key, value) VALUES (?, ?)",
-                ("test_transaction", "success")
+                "INSERT INTO meta (key, value) VALUES (?, ?)", ("test_transaction", "success")
             )
-        
+
         # Verify data was committed
         value = get_meta("test_transaction")
         assert value == "success"
-        
+
         # Test transaction rollback on exception
         try:
             with db() as conn:
                 conn.execute(
                     "INSERT INTO meta (key, value) VALUES (?, ?)",
-                    ("test_rollback", "should_not_exist")
+                    ("test_rollback", "should_not_exist"),
                 )
                 # Force an error
                 raise Exception("Test exception")
         except Exception:
             pass
-        
+
         # Verify data was not committed due to exception
         value = get_meta("test_rollback")
         # Note: SQLite autocommit behavior may vary, this tests the general pattern
@@ -222,32 +220,26 @@ class TestDatabase:
                 (
                     "CVE-2024-TEST-KEV",
                     '{"knownRansomwareCampaignUse": "Known"}',
-                    datetime.now(timezone.utc).isoformat()
-                )
+                    datetime.now(timezone.utc).isoformat(),
+                ),
             )
-            
+
             # Test EPSS table
             conn.execute(
                 "INSERT INTO epss (cve_id, score, percentile, fetched_at) VALUES (?, ?, ?, ?)",
-                (
-                    "CVE-2024-TEST-EPSS",
-                    0.75,
-                    85.5,
-                    datetime.now(timezone.utc).isoformat()
-                )
+                ("CVE-2024-TEST-EPSS", 0.75, 85.5, datetime.now(timezone.utc).isoformat()),
             )
-            
+
             # Verify KEV data
             kev_row = conn.execute(
-                "SELECT cve_id FROM kev WHERE cve_id = ?",
-                ("CVE-2024-TEST-KEV",)
+                "SELECT cve_id FROM kev WHERE cve_id = ?", ("CVE-2024-TEST-KEV",)
             ).fetchone()
             assert kev_row[0] == "CVE-2024-TEST-KEV"
-            
+
             # Verify EPSS data
             epss_row = conn.execute(
                 "SELECT cve_id, score, percentile FROM epss WHERE cve_id = ?",
-                ("CVE-2024-TEST-EPSS",)
+                ("CVE-2024-TEST-EPSS",),
             ).fetchone()
             assert epss_row[0] == "CVE-2024-TEST-EPSS"
             assert epss_row[1] == 0.75
