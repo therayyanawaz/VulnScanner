@@ -101,6 +101,11 @@ def nvd_sync(since_str: Optional[str], until_str: Optional[str], debug: bool) ->
     default="none",
     help="Apply preset policy defaults (can be overridden by explicit fail options)",
 )
+@click.option(
+    "--no-network",
+    is_flag=True,
+    help="Cache-only mode: do not query live OSV APIs for missing cache entries",
+)
 @click.option("--debug", is_flag=True, help="Enable debug logging")
 def scan_deps(
     manifest_path: Path,
@@ -113,6 +118,7 @@ def scan_deps(
     fail_on_kev: bool,
     fail_on_epss: float | None,
     policy: str,
+    no_network: bool,
     debug: bool,
 ) -> None:
     if debug:
@@ -121,7 +127,7 @@ def scan_deps(
         logging.basicConfig(level=logging.DEBUG)
 
     try:
-        result = asyncio.run(scan_dependency_manifest(manifest_path))
+        result = asyncio.run(scan_dependency_manifest(manifest_path, allow_network=not no_network))
         result = filter_findings(
             result,
             min_severity=min_severity.lower() if min_severity else None,
@@ -140,6 +146,12 @@ def scan_deps(
         click.echo(f"📝 Report written to {output_path}")
     else:
         click.echo(rendered)
+
+    if no_network and result.cache_misses > 0:
+        click.echo(
+            "⚠️ Cache-only mode skipped live OSV lookups for "
+            f"{result.cache_misses} dependencies"
+        )
 
     fail_on, fail_on_kev, fail_on_epss = _resolve_scan_policy(
         policy=policy.lower(),

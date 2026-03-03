@@ -380,3 +380,65 @@ def test_retry_delay_seconds_parsing() -> None:
     assert osv._retry_delay_seconds("4", 0.5) == 4
     assert osv._retry_delay_seconds("not-a-number", 0.5) == 0.5
     assert osv._retry_delay_seconds(None, 0.5) == 0.5
+
+
+def test_scan_dependency_manifest_no_network_skips_live_osv_queries(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest = tmp_path / "requirements.txt"
+    manifest.write_text("flask==3.0.3\n", encoding="utf-8")
+
+    def _no_cache(*_args, **_kwargs):
+        return None
+
+    class _FailingAsyncClient:
+        def __init__(self, *args, **kwargs) -> None:
+            _ = args, kwargs
+            raise AssertionError("network client should not be created in --no-network mode")
+
+    monkeypatch.setattr(osv, "get_cached_osv", _no_cache)
+    monkeypatch.setattr(osv.httpx, "AsyncClient", _FailingAsyncClient)
+
+    result = asyncio.run(osv.scan_dependency_manifest(manifest, allow_network=False))
+    assert result.dependencies_total == 1
+    assert result.cache_hits == 0
+    assert result.cache_misses == 1
+    assert result.findings == ()
+
+
+def test_scan_dependency_manifest_no_network_uses_cached_query_payload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest = tmp_path / "requirements.txt"
+    manifest.write_text("flask==3.0.3\n", encoding="utf-8")
+
+    def _cached_query(*_args, **_kwargs):
+        return {
+            "vulns": [
+                {
+                    "id": "OSV-1",
+                    "summary": "From cache",
+                    "database_specific": {"severity": "high"},
+                    "aliases": ["CVE-2024-0001"],
+                }
+            ]
+        }
+
+    def _no_cached_detail(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(osv, "get_cached_osv", _cached_query)
+    monkeypatch.setattr(osv, "get_cached_osv_vuln", _no_cached_detail)
+    monkeypatch.setattr(osv, "_load_cve_enrichment", lambda _cves: {})
+
+    result = asyncio.run(osv.scan_dependency_manifest(manifest, allow_network=False))
+    assert result.dependencies_total == 1
+    assert result.cache_hits == 1
+    assert result.cache_misses == 0
+    assert len(result.findings) == 1
+    finding = result.findings[0]
+    assert finding.vuln_id == "OSV-1"
+    assert finding.summary == "From cache"
+    assert finding.severity == "high"

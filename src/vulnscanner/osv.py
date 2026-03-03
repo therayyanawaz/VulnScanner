@@ -124,7 +124,7 @@ def parse_dependency_manifest(path: str | Path) -> list[Dependency]:
     )
 
 
-async def scan_dependency_manifest(path: str | Path) -> ScanResult:
+async def scan_dependency_manifest(path: str | Path, allow_network: bool = True) -> ScanResult:
     dependencies = parse_dependency_manifest(path)
     if not dependencies:
         return ScanResult(dependencies_total=0, cache_hits=0, cache_misses=0, findings=tuple())
@@ -140,7 +140,7 @@ async def scan_dependency_manifest(path: str | Path) -> ScanResult:
         cache_hits += 1
         cached_payloads[dep.cache_key] = cached
 
-    if uncached:
+    if uncached and allow_network:
         async with httpx.AsyncClient(
             timeout=settings.osv_http_timeout_seconds,
             headers={"User-Agent": settings.user_agent},
@@ -152,7 +152,7 @@ async def scan_dependency_manifest(path: str | Path) -> ScanResult:
                     cache_osv_result(dep.ecosystem, dep.name, dep.version, normalized)
                     cached_payloads[dep.cache_key] = normalized
 
-    vuln_details = await _load_vulnerability_details(cached_payloads)
+    vuln_details = await _load_vulnerability_details(cached_payloads, allow_network=allow_network)
 
     raw_entries: list[tuple[Dependency, str, dict[str, Any], list[str]]] = []
     all_cve_ids: set[str] = set()
@@ -343,7 +343,8 @@ def _load_cve_enrichment(cve_ids: set[str]) -> dict[str, tuple[bool, float | Non
 
 
 async def _load_vulnerability_details(
-    query_payloads: dict[tuple[str, str, str], dict[str, Any]]
+    query_payloads: dict[tuple[str, str, str], dict[str, Any]],
+    allow_network: bool = True,
 ) -> dict[str, dict[str, Any]]:
     details: dict[str, dict[str, Any]] = {}
     vuln_ids: set[str] = set()
@@ -361,7 +362,7 @@ async def _load_vulnerability_details(
             continue
         pending.append(vuln_id)
 
-    if not pending:
+    if not pending or not allow_network:
         return details
 
     async with httpx.AsyncClient(

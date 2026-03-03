@@ -4,8 +4,10 @@ import json
 from datetime import datetime, timezone
 
 import pytest
+from click.testing import CliRunner
 
-from vulnscanner.cli import _parse_dt, _render_scan_result, _resolve_scan_policy
+import vulnscanner.cli as cli
+from vulnscanner.cli import _parse_dt, _render_scan_result, _resolve_scan_policy, main
 from vulnscanner.osv import ScanFinding, ScanResult
 
 
@@ -109,3 +111,26 @@ def test_render_scan_result_csv_markdown_and_sarif() -> None:
     assert run["tool"]["driver"]["name"] == "VulnScanner"
     assert run["results"][0]["ruleId"] == "OSV-1"
     assert run["results"][0]["level"] == "error"
+
+
+def test_scan_deps_help_includes_no_network_option() -> None:
+    runner = CliRunner()
+    result = runner.invoke(main, ["scan-deps", "--help"])
+    assert result.exit_code == 0
+    assert "--no-network" in result.output
+
+
+def test_scan_deps_no_network_warns_on_cache_miss(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    manifest = tmp_path / "requirements.txt"
+    manifest.write_text("flask==3.0.3\n", encoding="utf-8")
+
+    async def _fake_scan(path, allow_network=True):
+        assert path == manifest
+        assert allow_network is False
+        return ScanResult(dependencies_total=1, cache_hits=0, cache_misses=1, findings=())
+
+    monkeypatch.setattr(cli, "scan_dependency_manifest", _fake_scan)
+    runner = CliRunner()
+    result = runner.invoke(main, ["scan-deps", str(manifest), "--no-network"])
+    assert result.exit_code == 0
+    assert "Cache-only mode skipped live OSV lookups for 1 dependencies" in result.output
