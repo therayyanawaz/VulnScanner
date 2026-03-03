@@ -11,7 +11,7 @@ from typing import Optional
 
 import click
 
-from .db import delete_meta, ensure_database, get_meta
+from .db import db, delete_meta, ensure_database, get_meta
 from .epss import sync_epss
 from .kev import sync_kev
 from .nvd import sync_nvd_delta
@@ -24,6 +24,7 @@ def main() -> None:
 
 
 STATE_META_KEYS = ("nvd_last_mod", "kev_last_sync", "epss_last_sync")
+CACHE_TARGETS = ("osv", "osv-vuln", "kev", "epss")
 
 EXIT_POLICY_FAILED = 10
 EXIT_STRICT_CACHE_MISS = 11
@@ -352,6 +353,74 @@ def state_reset(keys: tuple[str, ...]) -> None:
     click.echo(f"✅ Reset state keys: {', '.join(targets)}")
 
 
+@main.group("cache")
+def cache() -> None:
+    """Inspect or clear local cache tables."""
+
+
+@cache.command("stats")
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["table", "json"], case_sensitive=False),
+    default="table",
+    show_default=True,
+)
+def cache_stats(output_format: str) -> None:
+    ensure_database()
+    with db() as conn:
+        stats = {
+            "cves": _count_table_rows(conn, "cves"),
+            "osv_cache": _count_table_rows(conn, "osv_cache"),
+            "osv_vuln_cache": _count_table_rows(conn, "osv_vuln_cache"),
+            "kev": _count_table_rows(conn, "kev"),
+            "epss": _count_table_rows(conn, "epss"),
+        }
+    if output_format.lower() == "json":
+        click.echo(json.dumps(stats, indent=2))
+        return
+    lines = ["Cache stats:"]
+    for key, value in stats.items():
+        lines.append(f"- {key}: {value}")
+    click.echo("\n".join(lines))
+
+
+@cache.command("clear")
+@click.option(
+    "--target",
+    "targets",
+    multiple=True,
+    type=click.Choice(list(CACHE_TARGETS), case_sensitive=False),
+    help="Cache target(s) to clear. Default: osv + osv-vuln",
+)
+@click.option("--all", "clear_all", is_flag=True, help="Clear all cache targets")
+def cache_clear(targets: tuple[str, ...], clear_all: bool) -> None:
+    ensure_database()
+    selected = {target.lower() for target in targets}
+    if clear_all:
+        selected = set(CACHE_TARGETS)
+    if not selected:
+        selected = {"osv", "osv-vuln"}
+
+    with db() as conn:
+        if "osv" in selected:
+            conn.execute("DELETE FROM osv_cache")
+        if "osv-vuln" in selected:
+            conn.execute("DELETE FROM osv_vuln_cache")
+        if "kev" in selected:
+            conn.execute("DELETE FROM kev")
+            conn.execute("UPDATE cves SET is_known_exploited=0")
+        if "epss" in selected:
+            conn.execute("DELETE FROM epss")
+            conn.execute("UPDATE cves SET epss_score=NULL, epss_percentile=NULL")
+
+    if "kev" in selected:
+        delete_meta("kev_last_sync")
+    if "epss" in selected:
+        delete_meta("epss_last_sync")
+    click.echo(f"✅ Cleared cache targets: {', '.join(sorted(selected))}")
+
+
 def _render_scan_result(
     result: ScanResult,
     output_format: str,
@@ -561,6 +630,11 @@ def _sort_findings(findings: tuple[ScanFinding, ...], sort_by: str) -> list[Scan
             ),
         )
     raise ValueError(f"Unsupported sort field: {sort_by}")
+
+
+def _count_table_rows(conn: Any, table_name: str) -> int:
+    row = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()
+    return int(row[0]) if row else 0
 
 
 def _load_baseline_finding_keys(path: Path) -> tuple[set[tuple[str, str, str, str]], set[tuple[str, str, str]]]:

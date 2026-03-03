@@ -46,6 +46,8 @@ VulnScanner ingests and normalizes public vulnerability data into a local SQLite
 - `vulnscanner scan-deps`
 - `vulnscanner state show`
 - `vulnscanner state reset`
+- `vulnscanner cache stats`
+- `vulnscanner cache clear`
 
 ### What each command does
 
@@ -55,6 +57,8 @@ VulnScanner ingests and normalizes public vulnerability data into a local SQLite
 - `scan-deps`: Scans `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `poetry.lock`, `uv.lock`, `Pipfile.lock`, or `requirements.txt` through OSV, enriches findings with local CVE/KEV/EPSS context, and enforces CI policy gates.
 - `state show`: Displays current sync checkpoint metadata (`nvd_last_mod`, `kev_last_sync`, `epss_last_sync`).
 - `state reset`: Clears selected or all sync checkpoint metadata.
+- `cache stats`: Shows local cache/table entry counts.
+- `cache clear`: Clears selected cache targets with enrichment consistency updates.
 
 ## Architecture
 
@@ -225,6 +229,32 @@ Options:
 - `--no-network` (cache-only mode; skips live OSV API lookups)
 - `--strict-cache` (requires `--no-network`; fails if cache misses are detected)
 - `--debug`
+
+### `vulnscanner cache stats`
+
+Show cache and table sizes.
+
+```bash
+vulnscanner cache stats
+vulnscanner cache stats --format json
+```
+
+Options:
+- `--format [table|json]`
+
+### `vulnscanner cache clear`
+
+Clear selected cache targets.
+
+```bash
+vulnscanner cache clear
+vulnscanner cache clear --target kev --target epss
+vulnscanner cache clear --all
+```
+
+Options:
+- `--target [osv|osv-vuln|kev|epss]` (repeatable; default clears `osv` + `osv-vuln`)
+- `--all` (clears all cache targets)
 
 ## Policy and Reporting
 

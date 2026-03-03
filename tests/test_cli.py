@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 from datetime import datetime, timezone
 
 import pytest
@@ -503,3 +504,88 @@ def test_kev_sync_failure_uses_sync_exit_code(monkeypatch: pytest.MonkeyPatch) -
     result = runner.invoke(main, ["kev-sync"])
     assert result.exit_code == cli.EXIT_SYNC_FAILED
     assert "KEV sync failed: feed down" in result.output
+
+
+def test_cache_stats_json_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    counts = {
+        "cves": 10,
+        "osv_cache": 3,
+        "osv_vuln_cache": 4,
+        "kev": 5,
+        "epss": 6,
+    }
+
+    class _Cursor:
+        def __init__(self, value: int) -> None:
+            self._value = value
+
+        def fetchone(self) -> tuple[int]:
+            return (self._value,)
+
+    class _Conn:
+        def execute(self, query: str):
+            table = query.split("FROM", 1)[1].strip()
+            return _Cursor(counts[table])
+
+    @contextmanager
+    def _fake_db():
+        yield _Conn()
+
+    monkeypatch.setattr(cli, "ensure_database", lambda: None)
+    monkeypatch.setattr(cli, "db", _fake_db)
+    runner = CliRunner()
+    result = runner.invoke(main, ["cache", "stats", "--format", "json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload == counts
+
+
+def test_cache_clear_defaults_to_osv_tables(monkeypatch: pytest.MonkeyPatch) -> None:
+    executed: list[str] = []
+    deleted_meta: list[str] = []
+
+    class _Conn:
+        def execute(self, query: str):
+            executed.append(query)
+            return None
+
+    @contextmanager
+    def _fake_db():
+        yield _Conn()
+
+    monkeypatch.setattr(cli, "ensure_database", lambda: None)
+    monkeypatch.setattr(cli, "db", _fake_db)
+    monkeypatch.setattr(cli, "delete_meta", lambda key: deleted_meta.append(key))
+    runner = CliRunner()
+    result = runner.invoke(main, ["cache", "clear"])
+    assert result.exit_code == 0
+    assert executed == ["DELETE FROM osv_cache", "DELETE FROM osv_vuln_cache"]
+    assert deleted_meta == []
+
+
+def test_cache_clear_all_resets_enrichment_and_meta(monkeypatch: pytest.MonkeyPatch) -> None:
+    executed: list[str] = []
+    deleted_meta: list[str] = []
+
+    class _Conn:
+        def execute(self, query: str):
+            executed.append(query)
+            return None
+
+    @contextmanager
+    def _fake_db():
+        yield _Conn()
+
+    monkeypatch.setattr(cli, "ensure_database", lambda: None)
+    monkeypatch.setattr(cli, "db", _fake_db)
+    monkeypatch.setattr(cli, "delete_meta", lambda key: deleted_meta.append(key))
+    runner = CliRunner()
+    result = runner.invoke(main, ["cache", "clear", "--all"])
+    assert result.exit_code == 0
+    assert "DELETE FROM osv_cache" in executed
+    assert "DELETE FROM osv_vuln_cache" in executed
+    assert "DELETE FROM kev" in executed
+    assert "DELETE FROM epss" in executed
+    assert "UPDATE cves SET is_known_exploited=0" in executed
+    assert "UPDATE cves SET epss_score=NULL, epss_percentile=NULL" in executed
+    assert deleted_meta == ["kev_last_sync", "epss_last_sync"]
