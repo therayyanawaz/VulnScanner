@@ -497,7 +497,10 @@ def _severity_from_value(value: Any) -> list[str]:
 
 
 def _parse_package_lock(path: Path) -> list[Dependency]:
-    data = json.loads(path.read_text(encoding="utf-8"))
+    loaded = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(loaded, dict):
+        return []
+    data = loaded
     dependencies: list[Dependency] = []
     packages = data.get("packages")
     if isinstance(packages, dict):
@@ -705,7 +708,10 @@ def _extract_pypi_toml_packages(data: dict[str, Any]) -> list[Dependency]:
 
 
 def _parse_pipfile_lock(path: Path) -> list[Dependency]:
-    data = json.loads(path.read_text(encoding="utf-8"))
+    loaded = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(loaded, dict):
+        return []
+    data = loaded
     dependencies: list[Dependency] = []
     for section in ("default", "develop"):
         packages = data.get(section)
