@@ -125,6 +125,13 @@ def nvd_sync(since_str: Optional[str], until_str: Optional[str], debug: bool) ->
     help="Path to previous JSON scan report for finding-diff comparisons",
 )
 @click.option(
+    "--save-baseline",
+    "save_baseline_path",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="Write current filtered findings to a JSON baseline file",
+)
+@click.option(
     "--new-only",
     is_flag=True,
     help="With --baseline, include only findings not present in the baseline report",
@@ -180,6 +187,7 @@ def scan_deps(
     summary_only: bool,
     sort_by: str,
     baseline_path: Path | None,
+    save_baseline_path: Path | None,
     new_only: bool,
     fail_on: str | None,
     min_severity: str | None,
@@ -230,6 +238,14 @@ def scan_deps(
         if new_only:
             rendered_result = diffed
             policy_result = diffed
+
+    if save_baseline_path is not None:
+        save_baseline_path.parent.mkdir(parents=True, exist_ok=True)
+        save_baseline_path.write_text(
+            json.dumps(result.as_dict(), indent=2) + "\n",
+            encoding="utf-8",
+        )
+        click.echo(f"🗂️ Baseline saved to {save_baseline_path}")
 
     rendered = _render_scan_result(
         rendered_result,

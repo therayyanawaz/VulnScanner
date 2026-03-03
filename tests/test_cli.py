@@ -124,6 +124,7 @@ def test_scan_deps_help_includes_no_network_option() -> None:
     assert "--summary-only" in result.output
     assert "--sort-by" in result.output
     assert "--baseline" in result.output
+    assert "--save-baseline" in result.output
     assert "--new-only" in result.output
 
 
@@ -453,6 +454,42 @@ def test_scan_deps_invalid_baseline_uses_scan_failed_exit_code(
     result = runner.invoke(main, ["scan-deps", str(manifest), "--baseline", str(baseline)])
     assert result.exit_code == cli.EXIT_SCAN_FAILED
     assert "Invalid baseline file:" in result.output
+
+
+def test_scan_deps_save_baseline_writes_json(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    manifest = tmp_path / "requirements.txt"
+    manifest.write_text("flask==3.0.3\n", encoding="utf-8")
+    baseline_out = tmp_path / "out" / "baseline.json"
+
+    async def _fake_scan(path, allow_network=True):
+        _ = allow_network
+        assert path == manifest
+        return ScanResult(
+            dependencies_total=1,
+            cache_hits=0,
+            cache_misses=1,
+            findings=(
+                ScanFinding(
+                    vuln_id="OSV-1",
+                    package="demo",
+                    ecosystem="PyPI",
+                    version="1.0.0",
+                    severity="high",
+                    aliases=("CVE-2024-0001",),
+                    summary="Demo finding",
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(cli, "scan_dependency_manifest", _fake_scan)
+    runner = CliRunner()
+    result = runner.invoke(main, ["scan-deps", str(manifest), "--save-baseline", str(baseline_out)])
+    assert result.exit_code == 0
+    assert "Baseline saved to" in result.output
+    payload = json.loads(baseline_out.read_text(encoding="utf-8"))
+    assert payload["dependencies_total"] == 1
+    assert payload["findings_total"] == 1
+    assert payload["findings"][0]["id"] == "OSV-1"
 
 
 def test_state_show_json_output(monkeypatch: pytest.MonkeyPatch) -> None:
