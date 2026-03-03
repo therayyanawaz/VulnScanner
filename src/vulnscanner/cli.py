@@ -98,11 +98,18 @@ def nvd_sync(since_str: Optional[str], until_str: Optional[str], debug: bool) ->
         stats = asyncio.run(sync_nvd_delta(since, until))
         click.echo(f"✅ Sync complete: {stats['cves']} CVEs, {stats['pages']} pages")
     except Exception as e:
-        if "429" in str(e):
+        error_message = str(e)
+        if "429" in error_message:
             click.echo("💡 You're being rate limited. Try:")
             click.echo("   1. Get a free NVD API key (see link above)")
             click.echo("   2. Set it: export NVD_API_KEY=your_key_here")
             click.echo("   3. Or wait a few minutes and try again")
+        if "zero CVEs over a long time window" in error_message:
+            click.echo("💡 NVD returned 0 CVEs for a long sync window. Try:")
+            click.echo("   1. vulnscanner nvd-sync --since 90d")
+            click.echo("   2. vulnscanner kev-sync --force")
+            click.echo("   3. vulnscanner epss-sync --force")
+            click.echo("   4. vulnscanner state show")
         if debug:
             raise
         raise SyncFailedError(f"Sync failed: {e}") from e

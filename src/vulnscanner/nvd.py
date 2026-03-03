@@ -14,6 +14,7 @@ from .db import db, get_meta, set_meta
 
 NVD_BASE = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 LOGGER = logging.getLogger(__name__)
+EMPTY_SYNC_FAILURE_WINDOW_DAYS = 30
 
 
 @dataclass
@@ -111,9 +112,16 @@ async def sync_nvd_delta(
             while True:
                 data = await client.fetch_page(window.start, window.end, start_index)
                 pages += 1
-                total_results = total_results or int(data.get("totalResults", 0))
+                page_total_results = int(data.get("totalResults", 0) or 0)
+                if total_results is None:
+                    total_results = page_total_results
                 vulnerabilities: Iterable[dict[str, Any]] = data.get("vulnerabilities", [])
                 if not vulnerabilities:
+                    if _is_suspicious_empty_page(total_results, start_index):
+                        raise RuntimeError(
+                            "NVD sync returned an empty vulnerabilities page despite non-zero "
+                            "totalResults. Sync may be incomplete; retry with a shorter time window."
+                        )
                     break
                 count = _save_vulnerabilities(vulnerabilities)
                 saved += count
@@ -122,6 +130,11 @@ async def sync_nvd_delta(
                 if start_index + results_per_page >= total_results:
                     break
                 start_index += results_per_page
+        if _should_fail_empty_sync(last, end, saved, pages):
+            raise RuntimeError(
+                "NVD sync returned zero CVEs over a long time window. "
+                "Check API rate limiting, date parameters, and connectivity."
+            )
         _set_last_mod_time(end)
         return {"cves": saved, "pages": pages}
     finally:
@@ -212,4 +225,17 @@ def _format_nvd_datetime(dt: datetime) -> str:
         dt = dt.replace(tzinfo=timezone.utc)
     else:
         dt = dt.astimezone(timezone.utc)
-    return dt.strftime("%Y-%m-%dT%H:%M:%S")
+    return dt.isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _should_fail_empty_sync(start: datetime, end: datetime, saved: int, pages: int) -> bool:
+    if saved > 0 or pages <= 0:
+        return False
+    window = end - start
+    return window >= timedelta(days=EMPTY_SYNC_FAILURE_WINDOW_DAYS)
+
+
+def _is_suspicious_empty_page(total_results: int | None, start_index: int) -> bool:
+    if total_results is None or total_results <= 0:
+        return False
+    return start_index < total_results

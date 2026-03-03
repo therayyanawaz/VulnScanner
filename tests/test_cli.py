@@ -641,6 +641,22 @@ def test_kev_sync_failure_uses_sync_exit_code(monkeypatch: pytest.MonkeyPatch) -
     assert "KEV sync failed: feed down" in result.output
 
 
+def test_nvd_sync_shows_zero_result_recovery_guidance(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _broken_sync(*_args, **_kwargs):
+        raise RuntimeError("NVD sync returned zero CVEs over a long time window.")
+
+    monkeypatch.setattr(cli, "ensure_database", lambda: None)
+    monkeypatch.setattr(cli, "sync_nvd_delta", _broken_sync)
+    runner = CliRunner()
+    result = runner.invoke(main, ["nvd-sync", "--since", "90d"])
+    assert result.exit_code == cli.EXIT_SYNC_FAILED
+    assert "NVD returned 0 CVEs for a long sync window" in result.output
+    assert "vulnscanner nvd-sync --since 90d" in result.output
+    assert "vulnscanner kev-sync --force" in result.output
+    assert "vulnscanner epss-sync --force" in result.output
+    assert "Sync failed: NVD sync returned zero CVEs over a long time window." in result.output
+
+
 def test_cache_stats_json_output(monkeypatch: pytest.MonkeyPatch) -> None:
     counts = {
         "cves": 10,

@@ -178,6 +178,14 @@ Options:
 - `--until`: ISO8601 with timezone, or relative values (`7d`, `12h`, `today`, `yesterday`, `now`)
 - `--debug`
 
+Troubleshooting:
+- If you hit NVD `429 Too Many Requests`, retry with a shorter window:
+  `vulnscanner nvd-sync --since 90d`
+- If sync reports 0 CVEs for a long window, refresh enrichment caches after NVD:
+  `vulnscanner kev-sync --force`
+  `vulnscanner epss-sync --force`
+  `vulnscanner state show`
+
 ### `vulnscanner kev-sync`
 
 ```bash
@@ -339,6 +347,9 @@ vulnscanner scan-deps package-lock.json --baseline reports/prev.json --fail-on h
 | `KEV_TTL_HOURS` | `24` | KEV sync TTL |
 | `EPSS_TTL_HOURS` | `720` | EPSS sync TTL |
 | `VULNSCANNER_UA` | project UA | Upstream User-Agent |
+
+> [!NOTE]
+> `nvd-sync` now fails fast for suspicious long-window zero-result runs (to avoid misleading “success” with empty CVE data).
 
 ---
 
