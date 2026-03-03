@@ -66,6 +66,26 @@ def test_parse_yarn_lock_classic(tmp_path: Path) -> None:
     assert len(deps) == 2
 
 
+def test_parse_yarn_lock_berry_format(tmp_path: Path) -> None:
+    path = tmp_path / "yarn.lock"
+    path.write_text(
+        "\n".join(
+            [
+                "__metadata:",
+                "  version: 8",
+                "",
+                '"@types/node@npm:^20.0.0":',
+                "  version: 20.11.30",
+                '  resolution: "@types/node@npm:20.11.30"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    deps = parse_dependency_manifest(path)
+    assert deps == [Dependency("npm", "@types/node", "20.11.30")]
+
+
 def test_parse_pnpm_lock_yaml(tmp_path: Path) -> None:
     path = tmp_path / "pnpm-lock.yaml"
     path.write_text(
@@ -88,6 +108,28 @@ def test_parse_pnpm_lock_yaml(tmp_path: Path) -> None:
     assert Dependency("npm", "lodash", "4.17.21") in deps
     assert Dependency("npm", "@types/node", "20.11.30") in deps
     assert all(item.version != "link:../local-lib" for item in deps)
+    assert len(deps) == 2
+
+
+def test_parse_pnpm_lock_handles_quoted_and_peer_suffix_keys(tmp_path: Path) -> None:
+    path = tmp_path / "pnpm-lock.yaml"
+    path.write_text(
+        "\n".join(
+            [
+                "lockfileVersion: '9.0'",
+                "packages:",
+                "  '@scope/pkg@1.2.3':",
+                "    resolution: {integrity: sha512-demo}",
+                "  react-dom@18.2.0(react@18.2.0):",
+                "    resolution: {integrity: sha512-demo}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    deps = parse_dependency_manifest(path)
+    assert Dependency("npm", "@scope/pkg", "1.2.3") in deps
+    assert Dependency("npm", "react-dom", "18.2.0") in deps
     assert len(deps) == 2
 
 
