@@ -122,6 +122,8 @@ def test_scan_deps_help_includes_no_network_option() -> None:
     assert "--top" in result.output
     assert "--summary-only" in result.output
     assert "--sort-by" in result.output
+    assert "--baseline" in result.output
+    assert "--new-only" in result.output
 
 
 def test_scan_deps_no_network_warns_on_cache_miss(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -215,6 +217,16 @@ def test_scan_deps_runtime_failure_uses_scan_failed_exit_code(
     assert "Dependency scan failed: upstream unavailable" in result.output
 
 
+def test_scan_deps_new_only_requires_baseline(tmp_path) -> None:
+    manifest = tmp_path / "requirements.txt"
+    manifest.write_text("flask==3.0.3\n", encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["scan-deps", str(manifest), "--new-only"])
+    assert result.exit_code != 0
+    assert "--new-only requires --baseline" in result.output
+
+
 def test_select_output_findings_supports_sort_and_limits() -> None:
     result = ScanResult(
         dependencies_total=3,
@@ -306,6 +318,86 @@ def test_scan_deps_top_limits_table_rows(tmp_path, monkeypatch: pytest.MonkeyPat
     assert "OSV-CRIT" in result.output
     assert "OSV-LOW" not in result.output
     assert "Displayed findings: 1 of 2" in result.output
+
+
+def test_scan_deps_baseline_new_only_filters_results(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    manifest = tmp_path / "requirements.txt"
+    manifest.write_text("flask==3.0.3\n", encoding="utf-8")
+    baseline = tmp_path / "baseline.json"
+    baseline.write_text(
+        json.dumps(
+            {
+                "findings": [
+                    {
+                        "id": "OSV-OLD",
+                        "package": "demo",
+                        "version": "1.0.0",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    async def _fake_scan(path, allow_network=True):
+        _ = allow_network
+        assert path == manifest
+        return ScanResult(
+            dependencies_total=1,
+            cache_hits=0,
+            cache_misses=0,
+            findings=(
+                ScanFinding(
+                    vuln_id="OSV-OLD",
+                    package="demo",
+                    ecosystem="PyPI",
+                    version="1.0.0",
+                    severity="high",
+                    aliases=(),
+                    summary="Existing issue",
+                ),
+                ScanFinding(
+                    vuln_id="OSV-NEW",
+                    package="demo",
+                    ecosystem="PyPI",
+                    version="1.0.0",
+                    severity="critical",
+                    aliases=(),
+                    summary="New issue",
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(cli, "scan_dependency_manifest", _fake_scan)
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["scan-deps", str(manifest), "--baseline", str(baseline), "--new-only", "--format", "table"],
+    )
+    assert result.exit_code == 0
+    assert "OSV-NEW" in result.output
+    assert "OSV-OLD" not in result.output
+    assert "Baseline comparison: 1 new / 2 current findings" in result.output
+
+
+def test_scan_deps_invalid_baseline_uses_scan_failed_exit_code(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest = tmp_path / "requirements.txt"
+    manifest.write_text("flask==3.0.3\n", encoding="utf-8")
+    baseline = tmp_path / "baseline.json"
+    baseline.write_text("{}", encoding="utf-8")
+
+    async def _fake_scan(path, allow_network=True):
+        _ = path, allow_network
+        return ScanResult(dependencies_total=0, cache_hits=0, cache_misses=0, findings=())
+
+    monkeypatch.setattr(cli, "scan_dependency_manifest", _fake_scan)
+    runner = CliRunner()
+    result = runner.invoke(main, ["scan-deps", str(manifest), "--baseline", str(baseline)])
+    assert result.exit_code == cli.EXIT_SCAN_FAILED
+    assert "Invalid baseline file:" in result.output
 
 
 def test_state_show_json_output(monkeypatch: pytest.MonkeyPatch) -> None:

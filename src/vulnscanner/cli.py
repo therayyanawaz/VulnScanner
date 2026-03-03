@@ -117,6 +117,18 @@ def nvd_sync(since_str: Optional[str], until_str: Optional[str], debug: bool) ->
     help="Sort field for table/markdown finding rows",
 )
 @click.option(
+    "--baseline",
+    "baseline_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help="Path to previous JSON scan report for finding-diff comparisons",
+)
+@click.option(
+    "--new-only",
+    is_flag=True,
+    help="With --baseline, include only findings not present in the baseline report",
+)
+@click.option(
     "--fail-on",
     type=click.Choice(["low", "medium", "high", "critical"], case_sensitive=False),
     default=None,
@@ -166,6 +178,8 @@ def scan_deps(
     top: int,
     summary_only: bool,
     sort_by: str,
+    baseline_path: Path | None,
+    new_only: bool,
     fail_on: str | None,
     min_severity: str | None,
     kev_only: bool,
@@ -184,6 +198,8 @@ def scan_deps(
 
     if strict_cache and not no_network:
         raise click.BadParameter("--strict-cache requires --no-network", param_hint="--strict-cache")
+    if new_only and baseline_path is None:
+        raise click.BadParameter("--new-only requires --baseline", param_hint="--new-only")
 
     try:
         result = asyncio.run(scan_dependency_manifest(manifest_path, allow_network=not no_network))
@@ -198,8 +214,24 @@ def scan_deps(
             raise
         raise ScanFailedError(f"Dependency scan failed: {exc}") from exc
 
+    baseline_new_count: int | None = None
+    baseline_total_count: int | None = None
+    rendered_result = result
+    policy_result = result
+    if baseline_path is not None:
+        try:
+            baseline_keys = _load_baseline_finding_keys(baseline_path)
+        except ValueError as exc:
+            raise ScanFailedError(f"Invalid baseline file: {exc}") from exc
+        diffed = _filter_new_findings(result, baseline_keys)
+        baseline_new_count = len(diffed.findings)
+        baseline_total_count = len(result.findings)
+        if new_only:
+            rendered_result = diffed
+            policy_result = diffed
+
     rendered = _render_scan_result(
-        result,
+        rendered_result,
         output_format,
         top=top,
         summary_only=summary_only,
@@ -211,6 +243,9 @@ def scan_deps(
         click.echo(f"📝 Report written to {output_path}")
     else:
         click.echo(rendered)
+
+    if baseline_new_count is not None and baseline_total_count is not None:
+        click.echo(f"Baseline comparison: {baseline_new_count} new / {baseline_total_count} current findings")
 
     if no_network and result.cache_misses > 0:
         click.echo(
@@ -225,7 +260,7 @@ def scan_deps(
         fail_on_epss=fail_on_epss,
     )
     failures = policy_failures(
-        result,
+        policy_result,
         severity_threshold=fail_on,
         fail_on_kev=fail_on_kev,
         fail_on_epss=fail_on_epss,
@@ -526,6 +561,46 @@ def _sort_findings(findings: tuple[ScanFinding, ...], sort_by: str) -> list[Scan
             ),
         )
     raise ValueError(f"Unsupported sort field: {sort_by}")
+
+
+def _load_baseline_finding_keys(path: Path) -> set[tuple[str, str, str]]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise ValueError(f"cannot parse JSON from {path}") from exc
+    if not isinstance(data, dict):
+        raise ValueError("top-level JSON value must be an object")
+    findings = data.get("findings")
+    if not isinstance(findings, list):
+        raise ValueError("missing findings array")
+    keys: set[tuple[str, str, str]] = set()
+    for item in findings:
+        if not isinstance(item, dict):
+            continue
+        vuln_id = item.get("id")
+        package = item.get("package")
+        version = item.get("version")
+        if not isinstance(vuln_id, str) or not isinstance(package, str) or not isinstance(version, str):
+            continue
+        keys.add((vuln_id, package, version))
+    return keys
+
+
+def _filter_new_findings(
+    result: ScanResult,
+    baseline_keys: set[tuple[str, str, str]],
+) -> ScanResult:
+    filtered = tuple(
+        finding
+        for finding in result.findings
+        if (finding.vuln_id, finding.package, finding.version) not in baseline_keys
+    )
+    return ScanResult(
+        dependencies_total=result.dependencies_total,
+        cache_hits=result.cache_hits,
+        cache_misses=result.cache_misses,
+        findings=filtered,
+    )
 
 
 def _render_sarif(result: ScanResult) -> str:

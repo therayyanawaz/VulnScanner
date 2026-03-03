@@ -195,6 +195,7 @@ vulnscanner scan-deps poetry.lock --no-network
 vulnscanner scan-deps poetry.lock --no-network --strict-cache
 vulnscanner scan-deps package-lock.json --sort-by epss --top 10
 vulnscanner scan-deps package-lock.json --summary-only
+vulnscanner scan-deps package-lock.json --baseline reports/prev.json --new-only
 ```
 
 Supported manifests:
@@ -209,6 +210,8 @@ Options:
 - `--top N` (table/markdown rows limit; default `20`)
 - `--summary-only` (table/markdown summary only)
 - `--sort-by [severity|epss|package|id]` (table/markdown row ordering)
+- `--baseline FILE` (JSON output from a previous scan for diffing)
+- `--new-only` (requires `--baseline`; only keep findings not in baseline)
 - `--min-severity [low|medium|high|critical]`
 - `--kev-only`
 - `--epss-min 0.0..1.0`
@@ -258,6 +261,9 @@ vulnscanner scan-deps package-lock.json --sort-by epss --top 10
 
 # Dashboard-only summary for pipelines
 vulnscanner scan-deps package-lock.json --summary-only
+
+# PR-focused diff gate (new findings only)
+vulnscanner scan-deps package-lock.json --baseline reports/prev.json --new-only
 ```
 
 ### Exit codes
