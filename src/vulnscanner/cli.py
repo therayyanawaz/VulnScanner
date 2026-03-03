@@ -25,6 +25,31 @@ def main() -> None:
 
 STATE_META_KEYS = ("nvd_last_mod", "kev_last_sync", "epss_last_sync")
 
+EXIT_POLICY_FAILED = 10
+EXIT_STRICT_CACHE_MISS = 11
+EXIT_SYNC_FAILED = 12
+EXIT_SCAN_FAILED = 13
+
+
+class ExitCodedClickException(click.ClickException):
+    exit_code = 1
+
+
+class PolicyFailedError(ExitCodedClickException):
+    exit_code = EXIT_POLICY_FAILED
+
+
+class StrictCacheMissError(ExitCodedClickException):
+    exit_code = EXIT_STRICT_CACHE_MISS
+
+
+class SyncFailedError(ExitCodedClickException):
+    exit_code = EXIT_SYNC_FAILED
+
+
+class ScanFailedError(ExitCodedClickException):
+    exit_code = EXIT_SCAN_FAILED
+
 
 @main.command("nvd-sync")
 @click.option("--since", "since_str", type=str, default=None, help="ISO8601 start time")
@@ -60,7 +85,7 @@ def nvd_sync(since_str: Optional[str], until_str: Optional[str], debug: bool) ->
             click.echo("   3. Or wait a few minutes and try again")
         if debug:
             raise
-        raise click.ClickException(f"Sync failed: {e}") from e
+        raise SyncFailedError(f"Sync failed: {e}") from e
 
 
 @main.command("scan-deps")
@@ -171,7 +196,7 @@ def scan_deps(
     except Exception as exc:
         if debug:
             raise
-        raise click.ClickException(f"Dependency scan failed: {exc}") from exc
+        raise ScanFailedError(f"Dependency scan failed: {exc}") from exc
 
     rendered = _render_scan_result(
         result,
@@ -205,10 +230,14 @@ def scan_deps(
         fail_on_kev=fail_on_kev,
         fail_on_epss=fail_on_epss,
     )
-    if strict_cache and result.cache_misses > 0:
+    strict_cache_failure = strict_cache and result.cache_misses > 0
+    if strict_cache_failure:
         failures.append(f"cache_miss={result.cache_misses}")
     if failures:
-        raise click.ClickException(f"Policy failed: {', '.join(failures)}")
+        message = f"Policy failed: {', '.join(failures)}"
+        if strict_cache_failure and len(failures) == 1:
+            raise StrictCacheMissError(message)
+        raise PolicyFailedError(message)
 
 
 @main.command("kev-sync")
@@ -218,7 +247,7 @@ def kev_sync(force: bool) -> None:
     try:
         stats = sync_kev(force=force)
     except Exception as exc:
-        raise click.ClickException(f"KEV sync failed: {exc}") from exc
+        raise SyncFailedError(f"KEV sync failed: {exc}") from exc
 
     if bool(stats["skipped"]):
         click.echo("✅ KEV sync skipped: cache is still fresh")
@@ -236,7 +265,7 @@ def epss_sync(force: bool) -> None:
     try:
         stats = sync_epss(force=force)
     except Exception as exc:
-        raise click.ClickException(f"EPSS sync failed: {exc}") from exc
+        raise SyncFailedError(f"EPSS sync failed: {exc}") from exc
 
     if bool(stats["skipped"]):
         click.echo("✅ EPSS sync skipped: cache is still fresh")

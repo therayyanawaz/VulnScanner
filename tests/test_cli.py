@@ -162,8 +162,57 @@ def test_scan_deps_strict_cache_fails_on_cache_miss(tmp_path, monkeypatch: pytes
     monkeypatch.setattr(cli, "scan_dependency_manifest", _fake_scan)
     runner = CliRunner()
     result = runner.invoke(main, ["scan-deps", str(manifest), "--no-network", "--strict-cache"])
-    assert result.exit_code != 0
+    assert result.exit_code == cli.EXIT_STRICT_CACHE_MISS
     assert "Policy failed: cache_miss=2" in result.output
+
+
+def test_scan_deps_policy_failure_uses_policy_exit_code(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    manifest = tmp_path / "requirements.txt"
+    manifest.write_text("flask==3.0.3\n", encoding="utf-8")
+
+    async def _fake_scan(path, allow_network=True):
+        _ = allow_network
+        assert path == manifest
+        return ScanResult(
+            dependencies_total=1,
+            cache_hits=0,
+            cache_misses=0,
+            findings=(
+                ScanFinding(
+                    vuln_id="OSV-CRIT",
+                    package="demo",
+                    ecosystem="PyPI",
+                    version="1.0.0",
+                    severity="critical",
+                    aliases=(),
+                    summary="Critical issue",
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(cli, "scan_dependency_manifest", _fake_scan)
+    runner = CliRunner()
+    result = runner.invoke(main, ["scan-deps", str(manifest), "--fail-on", "high"])
+    assert result.exit_code == cli.EXIT_POLICY_FAILED
+    assert "Policy failed: severity>=high" in result.output
+
+
+def test_scan_deps_runtime_failure_uses_scan_failed_exit_code(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest = tmp_path / "requirements.txt"
+    manifest.write_text("flask==3.0.3\n", encoding="utf-8")
+
+    async def _boom(path, allow_network=True):
+        _ = path, allow_network
+        raise RuntimeError("upstream unavailable")
+
+    monkeypatch.setattr(cli, "scan_dependency_manifest", _boom)
+    runner = CliRunner()
+    result = runner.invoke(main, ["scan-deps", str(manifest)])
+    assert result.exit_code == cli.EXIT_SCAN_FAILED
+    assert "Dependency scan failed: upstream unavailable" in result.output
 
 
 def test_select_output_findings_supports_sort_and_limits() -> None:
@@ -295,3 +344,16 @@ def test_state_reset_selected_key(monkeypatch: pytest.MonkeyPatch) -> None:
     result = runner.invoke(main, ["state", "reset", "--key", "kev_last_sync"])
     assert result.exit_code == 0
     assert deleted == ["kev_last_sync"]
+
+
+def test_kev_sync_failure_uses_sync_exit_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _broken_sync(force: bool = False):
+        _ = force
+        raise RuntimeError("feed down")
+
+    monkeypatch.setattr(cli, "ensure_database", lambda: None)
+    monkeypatch.setattr(cli, "sync_kev", _broken_sync)
+    runner = CliRunner()
+    result = runner.invoke(main, ["kev-sync"])
+    assert result.exit_code == cli.EXIT_SYNC_FAILED
+    assert "KEV sync failed: feed down" in result.output

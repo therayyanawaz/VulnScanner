@@ -260,6 +260,17 @@ vulnscanner scan-deps package-lock.json --sort-by epss --top 10
 vulnscanner scan-deps package-lock.json --summary-only
 ```
 
+### Exit codes
+
+`vulnscanner` uses stable non-zero exit codes for CI:
+
+| Code | Meaning |
+| ---: | --- |
+| `10` | Policy failure (`--fail-on`, `--fail-on-kev`, `--fail-on-epss`) |
+| `11` | Strict cache miss failure (`--no-network --strict-cache`) |
+| `12` | Feed sync failure (`nvd-sync`, `kev-sync`, `epss-sync`) |
+| `13` | Dependency scan execution failure |
+
 ### Output formats
 
 - `table`: human-readable terminal summary.
