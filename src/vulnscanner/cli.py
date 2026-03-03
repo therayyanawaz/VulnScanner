@@ -11,7 +11,7 @@ from typing import Optional
 
 import click
 
-from .db import ensure_database
+from .db import delete_meta, ensure_database, get_meta
 from .epss import sync_epss
 from .kev import sync_kev
 from .nvd import sync_nvd_delta
@@ -21,6 +21,9 @@ from .osv import ScanFinding, ScanResult, filter_findings, policy_failures, scan
 @click.group()
 def main() -> None:
     """VulnScanner CLI"""
+
+
+STATE_META_KEYS = ("nvd_last_mod", "kev_last_sync", "epss_last_sync")
 
 
 @main.command("nvd-sync")
@@ -242,6 +245,47 @@ def epss_sync(force: bool) -> None:
         "✅ EPSS sync complete: "
         f"{stats['epss_records']} EPSS records, {stats['matched_cves']} CVEs enriched"
     )
+
+
+@main.group("state")
+def state() -> None:
+    """Inspect or reset sync checkpoint state."""
+
+
+@state.command("show")
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["table", "json"], case_sensitive=False),
+    default="table",
+    show_default=True,
+)
+def state_show(output_format: str) -> None:
+    ensure_database()
+    values = {key: get_meta(key) for key in STATE_META_KEYS}
+    if output_format.lower() == "json":
+        click.echo(json.dumps(values, indent=2))
+        return
+    lines = ["Sync state:"]
+    for key in STATE_META_KEYS:
+        lines.append(f"- {key}: {values.get(key) or '<unset>'}")
+    click.echo("\n".join(lines))
+
+
+@state.command("reset")
+@click.option(
+    "--key",
+    "keys",
+    multiple=True,
+    type=click.Choice(list(STATE_META_KEYS), case_sensitive=False),
+    help="State key(s) to reset. Omit to reset all state keys.",
+)
+def state_reset(keys: tuple[str, ...]) -> None:
+    ensure_database()
+    targets = [item.lower() for item in keys] if keys else list(STATE_META_KEYS)
+    for key in targets:
+        delete_meta(key)
+    click.echo(f"✅ Reset state keys: {', '.join(targets)}")
 
 
 def _render_scan_result(

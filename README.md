@@ -44,6 +44,8 @@ VulnScanner ingests and normalizes public vulnerability data into a local SQLite
 - `vulnscanner kev-sync`
 - `vulnscanner epss-sync`
 - `vulnscanner scan-deps`
+- `vulnscanner state show`
+- `vulnscanner state reset`
 
 ### What each command does
 
@@ -51,6 +53,8 @@ VulnScanner ingests and normalizes public vulnerability data into a local SQLite
 - `kev-sync`: Imports CISA Known Exploited Vulnerabilities and marks matching local CVEs.
 - `epss-sync`: Imports EPSS score feed and enriches local CVEs with `epss_score` and `epss_percentile`.
 - `scan-deps`: Scans `package-lock.json`, `poetry.lock`, `Pipfile.lock`, or `requirements.txt` through OSV, enriches findings with local CVE/KEV/EPSS context, and enforces CI policy gates.
+- `state show`: Displays current sync checkpoint metadata (`nvd_last_mod`, `kev_last_sync`, `epss_last_sync`).
+- `state reset`: Clears selected or all sync checkpoint metadata.
 
 ## Architecture
 
@@ -154,6 +158,30 @@ vulnscanner epss-sync --force
 
 Options:
 - `--force`: bypass TTL and refresh now.
+
+### `vulnscanner state show`
+
+Display sync checkpoint state.
+
+```bash
+vulnscanner state show
+vulnscanner state show --format json
+```
+
+Options:
+- `--format [table|json]`
+
+### `vulnscanner state reset`
+
+Reset sync checkpoint state.
+
+```bash
+vulnscanner state reset
+vulnscanner state reset --key nvd_last_mod
+```
+
+Options:
+- `--key [nvd_last_mod|kev_last_sync|epss_last_sync]` (repeatable; omit to reset all)
 
 ### `vulnscanner scan-deps`
 

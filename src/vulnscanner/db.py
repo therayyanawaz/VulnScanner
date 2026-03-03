@@ -94,3 +94,8 @@ def set_meta(key: str, value: str) -> None:
             "INSERT INTO meta(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
             (key, value),
         )
+
+
+def delete_meta(key: str) -> None:
+    with db() as conn:
+        conn.execute("DELETE FROM meta WHERE key=?", (key,))

@@ -257,3 +257,41 @@ def test_scan_deps_top_limits_table_rows(tmp_path, monkeypatch: pytest.MonkeyPat
     assert "OSV-CRIT" in result.output
     assert "OSV-LOW" not in result.output
     assert "Displayed findings: 1 of 2" in result.output
+
+
+def test_state_show_json_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    values = {
+        "nvd_last_mod": "2026-03-03T00:00:00+00:00",
+        "kev_last_sync": None,
+        "epss_last_sync": "2026-03-02T00:00:00+00:00",
+    }
+    monkeypatch.setattr(cli, "ensure_database", lambda: None)
+    monkeypatch.setattr(cli, "get_meta", lambda key: values[key])
+    runner = CliRunner()
+    result = runner.invoke(main, ["state", "show", "--format", "json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["nvd_last_mod"] == "2026-03-03T00:00:00+00:00"
+    assert data["kev_last_sync"] is None
+    assert data["epss_last_sync"] == "2026-03-02T00:00:00+00:00"
+
+
+def test_state_reset_all_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    deleted: list[str] = []
+    monkeypatch.setattr(cli, "ensure_database", lambda: None)
+    monkeypatch.setattr(cli, "delete_meta", lambda key: deleted.append(key))
+    runner = CliRunner()
+    result = runner.invoke(main, ["state", "reset"])
+    assert result.exit_code == 0
+    assert deleted == ["nvd_last_mod", "kev_last_sync", "epss_last_sync"]
+    assert "Reset state keys: nvd_last_mod, kev_last_sync, epss_last_sync" in result.output
+
+
+def test_state_reset_selected_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    deleted: list[str] = []
+    monkeypatch.setattr(cli, "ensure_database", lambda: None)
+    monkeypatch.setattr(cli, "delete_meta", lambda key: deleted.append(key))
+    runner = CliRunner()
+    result = runner.invoke(main, ["state", "reset", "--key", "kev_last_sync"])
+    assert result.exit_code == 0
+    assert deleted == ["kev_last_sync"]
