@@ -201,6 +201,7 @@ vulnscanner scan-deps package-lock.json --sort-by epss --top 10
 vulnscanner scan-deps package-lock.json --summary-only
 vulnscanner scan-deps package-lock.json --baseline reports/prev.json --new-only
 vulnscanner scan-deps package-lock.json --save-baseline reports/new-baseline.json
+vulnscanner scan-deps package-lock.json --baseline reports/prev.json --fail-on high --fail-on-new-only
 ```
 
 Supported manifests:
@@ -221,6 +222,7 @@ Options:
 - `--baseline FILE` (JSON output from a previous scan for diffing)
 - `--save-baseline FILE` (writes current filtered findings to JSON baseline)
 - `--new-only` (requires `--baseline`; only keep findings not in baseline)
+- `--fail-on-new-only` (requires `--baseline`; evaluates fail gates on new findings only)
 - `--min-severity [low|medium|high|critical]`
 - `--kev-only`
 - `--epss-min 0.0..1.0`
@@ -302,6 +304,9 @@ vulnscanner scan-deps package-lock.json --baseline reports/prev.json --new-only
 
 # Refresh baseline snapshot for next comparison
 vulnscanner scan-deps package-lock.json --save-baseline reports/new-baseline.json
+
+# Keep full report, but gate only on newly introduced high+ findings
+vulnscanner scan-deps package-lock.json --baseline reports/prev.json --fail-on high --fail-on-new-only
 ```
 
 ### Exit codes

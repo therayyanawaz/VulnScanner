@@ -126,6 +126,7 @@ def test_scan_deps_help_includes_no_network_option() -> None:
     assert "--baseline" in result.output
     assert "--save-baseline" in result.output
     assert "--new-only" in result.output
+    assert "--fail-on-new-only" in result.output
 
 
 def test_scan_deps_no_network_warns_on_cache_miss(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -227,6 +228,16 @@ def test_scan_deps_new_only_requires_baseline(tmp_path) -> None:
     result = runner.invoke(main, ["scan-deps", str(manifest), "--new-only"])
     assert result.exit_code != 0
     assert "--new-only requires --baseline" in result.output
+
+
+def test_scan_deps_fail_on_new_only_requires_baseline(tmp_path) -> None:
+    manifest = tmp_path / "requirements.txt"
+    manifest.write_text("flask==3.0.3\n", encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["scan-deps", str(manifest), "--fail-on-new-only"])
+    assert result.exit_code != 0
+    assert "--fail-on-new-only requires --baseline" in result.output
 
 
 def test_select_output_findings_supports_sort_and_limits() -> None:
@@ -490,6 +501,67 @@ def test_scan_deps_save_baseline_writes_json(tmp_path, monkeypatch: pytest.Monke
     assert payload["dependencies_total"] == 1
     assert payload["findings_total"] == 1
     assert payload["findings"][0]["id"] == "OSV-1"
+
+
+def test_scan_deps_fail_on_new_only_uses_diff_for_policy(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest = tmp_path / "requirements.txt"
+    manifest.write_text("flask==3.0.3\n", encoding="utf-8")
+    baseline = tmp_path / "baseline.json"
+    baseline.write_text(
+        json.dumps(
+            {
+                "findings": [
+                    {
+                        "id": "OSV-OLD",
+                        "package": "demo",
+                        "version": "1.0.0",
+                        "ecosystem": "PyPI",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    async def _fake_scan(path, allow_network=True):
+        _ = allow_network
+        assert path == manifest
+        return ScanResult(
+            dependencies_total=1,
+            cache_hits=0,
+            cache_misses=0,
+            findings=(
+                ScanFinding(
+                    vuln_id="OSV-OLD",
+                    package="demo",
+                    ecosystem="PyPI",
+                    version="1.0.0",
+                    severity="critical",
+                    aliases=(),
+                    summary="Existing critical",
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(cli, "scan_dependency_manifest", _fake_scan)
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "scan-deps",
+            str(manifest),
+            "--baseline",
+            str(baseline),
+            "--fail-on-new-only",
+            "--fail-on",
+            "high",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "Baseline comparison: 0 new / 1 current findings" in result.output
 
 
 def test_state_show_json_output(monkeypatch: pytest.MonkeyPatch) -> None:

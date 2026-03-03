@@ -137,6 +137,11 @@ def nvd_sync(since_str: Optional[str], until_str: Optional[str], debug: bool) ->
     help="With --baseline, include only findings not present in the baseline report",
 )
 @click.option(
+    "--fail-on-new-only",
+    is_flag=True,
+    help="With --baseline, evaluate fail gates only against findings new vs baseline",
+)
+@click.option(
     "--fail-on",
     type=click.Choice(["low", "medium", "high", "critical"], case_sensitive=False),
     default=None,
@@ -189,6 +194,7 @@ def scan_deps(
     baseline_path: Path | None,
     save_baseline_path: Path | None,
     new_only: bool,
+    fail_on_new_only: bool,
     fail_on: str | None,
     min_severity: str | None,
     kev_only: bool,
@@ -209,6 +215,8 @@ def scan_deps(
         raise click.BadParameter("--strict-cache requires --no-network", param_hint="--strict-cache")
     if new_only and baseline_path is None:
         raise click.BadParameter("--new-only requires --baseline", param_hint="--new-only")
+    if fail_on_new_only and baseline_path is None:
+        raise click.BadParameter("--fail-on-new-only requires --baseline", param_hint="--fail-on-new-only")
 
     try:
         result = asyncio.run(scan_dependency_manifest(manifest_path, allow_network=not no_network))
@@ -237,6 +245,8 @@ def scan_deps(
         baseline_total_count = len(result.findings)
         if new_only:
             rendered_result = diffed
+            policy_result = diffed
+        elif fail_on_new_only:
             policy_result = diffed
 
     if save_baseline_path is not None:
