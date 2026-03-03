@@ -7,7 +7,7 @@ import json
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import click
 
@@ -16,7 +16,6 @@ from .epss import sync_epss
 from .kev import sync_kev
 from .nvd import sync_nvd_delta
 from .osv import ScanFinding, ScanResult, filter_findings, policy_failures, scan_dependency_manifest
-
 
 CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"], "max_content_width": 110}
 
@@ -83,6 +82,7 @@ def nvd_sync(since_str: Optional[str], until_str: Optional[str], debug: bool) ->
 
     # Show rate limiting info
     from .config import settings
+
     if settings.nvd_api_key:
         click.echo(f"🔑 Using API key, rate limit: {settings.nvd_max_per_30s}/30s")
     else:
@@ -106,7 +106,9 @@ def nvd_sync(since_str: Optional[str], until_str: Optional[str], debug: bool) ->
             click.echo("   3. Or wait a few minutes and try again")
         if "HTTP 404 while using an API key" in error_message:
             click.echo("💡 NVD API key appears invalid, blocked, or revoked. Try:")
-            click.echo("   1. Verify/regenerate your key at: https://nvd.nist.gov/developers/request-an-api-key")
+            click.echo(
+                "   1. Verify/regenerate your key at: https://nvd.nist.gov/developers/request-an-api-key"
+            )
             click.echo("   2. Temporarily retry without key: unset NVD_API_KEY")
             click.echo("   3. Re-run: vulnscanner nvd-sync --since 7d --until now")
         if "zero CVEs over a long time window" in error_message:
@@ -128,7 +130,9 @@ def nvd_sync(since_str: Optional[str], until_str: Optional[str], debug: bool) ->
     type=click.Choice(["table", "json", "csv", "markdown", "sarif"]),
     default="table",
 )
-@click.option("--output", "output_path", type=click.Path(dir_okay=False, path_type=Path), default=None)
+@click.option(
+    "--output", "output_path", type=click.Path(dir_okay=False, path_type=Path), default=None
+)
 @click.option(
     "--top",
     type=click.IntRange(min=0),
@@ -184,14 +188,18 @@ def nvd_sync(since_str: Optional[str], until_str: Optional[str], debug: bool) ->
     default=None,
     help="Only include findings at or above this severity in output and policy checks",
 )
-@click.option("--kev-only", is_flag=True, help="Only include findings that are marked as known exploited")
+@click.option(
+    "--kev-only", is_flag=True, help="Only include findings that are marked as known exploited"
+)
 @click.option(
     "--epss-min",
     type=click.FloatRange(min=0.0, max=1.0),
     default=None,
     help="Only include findings with EPSS score at or above this value",
 )
-@click.option("--fail-on-kev", is_flag=True, help="Fail policy if any displayed finding is known exploited")
+@click.option(
+    "--fail-on-kev", is_flag=True, help="Fail policy if any displayed finding is known exploited"
+)
 @click.option(
     "--fail-on-epss",
     type=click.FloatRange(min=0.0, max=1.0),
@@ -252,11 +260,15 @@ def scan_deps(
         logging.basicConfig(level=logging.DEBUG)
 
     if strict_cache and not no_network:
-        raise click.BadParameter("--strict-cache requires --no-network", param_hint="--strict-cache")
+        raise click.BadParameter(
+            "--strict-cache requires --no-network", param_hint="--strict-cache"
+        )
     if new_only and baseline_path is None:
         raise click.BadParameter("--new-only requires --baseline", param_hint="--new-only")
     if fail_on_new_only and baseline_path is None:
-        raise click.BadParameter("--fail-on-new-only requires --baseline", param_hint="--fail-on-new-only")
+        raise click.BadParameter(
+            "--fail-on-new-only requires --baseline", param_hint="--fail-on-new-only"
+        )
 
     try:
         result = asyncio.run(scan_dependency_manifest(manifest_path, allow_network=not no_network))
@@ -312,12 +324,13 @@ def scan_deps(
         click.echo(rendered)
 
     if baseline_new_count is not None and baseline_total_count is not None:
-        click.echo(f"Baseline comparison: {baseline_new_count} new / {baseline_total_count} current findings")
+        click.echo(
+            f"Baseline comparison: {baseline_new_count} new / {baseline_total_count} current findings"
+        )
 
     if no_network and result.cache_misses > 0:
         click.echo(
-            "⚠️ Cache-only mode skipped live OSV lookups for "
-            f"{result.cache_misses} dependencies"
+            "⚠️ Cache-only mode skipped live OSV lookups for " f"{result.cache_misses} dependencies"
         )
 
     fail_on, fail_on_kev, fail_on_epss = _resolve_scan_policy(
@@ -657,7 +670,9 @@ def _render_markdown(
         f"| {counts['critical']} | {counts['high']} | {counts['medium']} | {counts['low']} | {counts['unknown']} |"
     )
     lines.append("")
-    lines.append(f"- Findings displayed: **{len(display_findings)}** (sorted by `{sort_by}`, top `{top}`)")
+    lines.append(
+        f"- Findings displayed: **{len(display_findings)}** (sorted by `{sort_by}`, top `{top}`)"
+    )
     if summary_only:
         return "\n".join(lines)
     lines.append("")
@@ -744,7 +759,9 @@ def _count_table_rows(conn: Any, table_name: str) -> int:
     return int(row[0]) if row else 0
 
 
-def _load_baseline_finding_keys(path: Path) -> tuple[set[tuple[str, str, str, str]], set[tuple[str, str, str]]]:
+def _load_baseline_finding_keys(
+    path: Path,
+) -> tuple[set[tuple[str, str, str, str]], set[tuple[str, str, str]]]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except Exception as exc:
@@ -763,7 +780,11 @@ def _load_baseline_finding_keys(path: Path) -> tuple[set[tuple[str, str, str, st
         package = item.get("package")
         version = item.get("version")
         ecosystem = item.get("ecosystem")
-        if not isinstance(vuln_id, str) or not isinstance(package, str) or not isinstance(version, str):
+        if (
+            not isinstance(vuln_id, str)
+            or not isinstance(package, str)
+            or not isinstance(version, str)
+        ):
             continue
         if isinstance(ecosystem, str):
             keyed_with_ecosystem.add((vuln_id, package, version, ecosystem))
@@ -785,11 +806,7 @@ def _filter_new_findings(
         legacy_key = (finding.vuln_id, finding.package, finding.version)
         return legacy_key in baseline_legacy
 
-    filtered = tuple(
-        finding
-        for finding in result.findings
-        if not is_in_baseline(finding)
-    )
+    filtered = tuple(finding for finding in result.findings if not is_in_baseline(finding))
     return ScanResult(
         dependencies_total=result.dependencies_total,
         cache_hits=result.cache_hits,
@@ -821,7 +838,9 @@ def _render_sarif(result: ScanResult) -> str:
                 "properties": properties,
             }
 
-        detail_parts = [f"[{finding.severity}] {finding.package}@{finding.version} ({finding.ecosystem})"]
+        detail_parts = [
+            f"[{finding.severity}] {finding.package}@{finding.version} ({finding.ecosystem})"
+        ]
         if finding.cve_id:
             detail_parts.append(f"CVE={finding.cve_id}")
         if finding.is_known_exploited:

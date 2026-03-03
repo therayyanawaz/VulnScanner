@@ -35,7 +35,10 @@ def get_cached_osv(ecosystem: str, package: str, version: str) -> dict[str, Any]
         fetched_at = datetime.fromisoformat(row[0])
         if fetched_at < threshold:
             return None
-        return json_loads(row[1])
+        payload = json_loads(row[1])
+        if not isinstance(payload, dict):
+            return None
+        return payload
 
 
 def cache_osv_vuln(vuln_id: str, payload: dict[str, Any]) -> None:
@@ -66,7 +69,10 @@ def get_cached_osv_vuln(vuln_id: str) -> dict[str, Any] | None:
         fetched_at = datetime.fromisoformat(row[0])
         if fetched_at < threshold:
             return None
-        return json_loads(row[1])
+        payload = json_loads(row[1])
+        if not isinstance(payload, dict):
+            return None
+        return payload
 
 
 def json_dumps(data: Any) -> str:

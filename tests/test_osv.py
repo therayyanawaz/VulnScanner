@@ -204,7 +204,7 @@ def test_parse_poetry_lock(tmp_path: Path) -> None:
     path.write_text(
         "\n".join(
             [
-                '[[package]]',
+                "[[package]]",
                 'name = "requests"',
                 'version = "2.32.3"',
                 "",
@@ -414,7 +414,9 @@ def test_policy_failures_combined() -> None:
             ),
         ),
     )
-    failures = policy_failures(result, severity_threshold="medium", fail_on_kev=True, fail_on_epss=0.5)
+    failures = policy_failures(
+        result, severity_threshold="medium", fail_on_kev=True, fail_on_epss=0.5
+    )
     assert failures == ["severity>=medium", "known_exploited", "epss>=0.5"]
 
 

@@ -37,7 +37,9 @@ def sync_kev(force: bool = False) -> dict[str, int | bool]:
                 (cve_id, json.dumps(entry, separators=(",", ":")), now.isoformat()),
             )
         conn.execute("UPDATE cves SET is_known_exploited=0")
-        conn.executemany("UPDATE cves SET is_known_exploited=1 WHERE cve_id=?", ((cve_id,) for cve_id in cve_ids))
+        conn.executemany(
+            "UPDATE cves SET is_known_exploited=1 WHERE cve_id=?", ((cve_id,) for cve_id in cve_ids)
+        )
         matched = conn.execute("SELECT COUNT(*) FROM cves WHERE is_known_exploited=1").fetchone()[0]
 
     set_meta("kev_last_sync", now.isoformat())

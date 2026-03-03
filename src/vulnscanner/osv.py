@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -14,9 +15,9 @@ from .caching import cache_osv_result, cache_osv_vuln, get_cached_osv, get_cache
 from .config import settings
 from .db import db
 
-try:
+if sys.version_info >= (3, 11):
     import tomllib
-except ModuleNotFoundError:  # pragma: no cover - exercised on Python < 3.11
+else:  # pragma: no cover - exercised on Python < 3.11
     import tomli as tomllib  # type: ignore[import-not-found]
 
 OSV_BATCH_URL = "https://api.osv.dev/v1/querybatch"
@@ -237,7 +238,9 @@ def filter_findings(
     if kev_only:
         findings = [item for item in findings if item.is_known_exploited is True]
     if epss_min is not None:
-        findings = [item for item in findings if item.epss_score is not None and item.epss_score >= epss_min]
+        findings = [
+            item for item in findings if item.epss_score is not None and item.epss_score >= epss_min
+        ]
 
     return ScanResult(
         dependencies_total=result.dependencies_total,
@@ -255,16 +258,22 @@ def policy_failures(
 ) -> list[str]:
     failures: list[str] = []
     if should_fail(result, severity_threshold):
+        assert severity_threshold is not None
         failures.append(f"severity>={severity_threshold.lower()}")
     if fail_on_kev and any(item.is_known_exploited is True for item in result.findings):
         failures.append("known_exploited")
     if fail_on_epss is not None:
-        if any(item.epss_score is not None and item.epss_score >= fail_on_epss for item in result.findings):
+        if any(
+            item.epss_score is not None and item.epss_score >= fail_on_epss
+            for item in result.findings
+        ):
             failures.append(f"epss>={fail_on_epss}")
     return failures
 
 
-async def _query_osv_batch(client: httpx.AsyncClient, deps: list[Dependency]) -> list[dict[str, Any]]:
+async def _query_osv_batch(
+    client: httpx.AsyncClient, deps: list[Dependency]
+) -> list[dict[str, Any]]:
     payload = {
         "queries": [
             {
@@ -518,7 +527,7 @@ def _parse_yarn_lock(path: Path) -> list[Dependency]:
     dependencies: list[Dependency] = []
     selectors: list[str] = []
     version: str | None = None
-    key_line = re.compile(r'^([^\s].*):\s*$')
+    key_line = re.compile(r"^([^\s].*):\s*$")
     version_line = re.compile(r'^\s{2}version(?:\s+|:\s*)"?([^"\s]+)"?\s*$')
 
     def flush() -> None:
@@ -559,7 +568,7 @@ def _parse_yarn_lock(path: Path) -> list[Dependency]:
 
 def _parse_yarn_selector_name(selector: str) -> str | None:
     value = selector.strip()
-    match = re.match(r'^(@[^/]+/[^@]+|[^@]+)@', value)
+    match = re.match(r"^(@[^/]+/[^@]+|[^@]+)@", value)
     if not match:
         return None
     return match.group(1)
@@ -568,8 +577,8 @@ def _parse_yarn_selector_name(selector: str) -> str | None:
 def _parse_pnpm_lock(path: Path) -> list[Dependency]:
     dependencies: list[Dependency] = []
     in_packages = False
-    top_level_line = re.compile(r'^[A-Za-z0-9_-]+:\s*$')
-    package_key_line = re.compile(r'^\s{2}([^:][^#]*):\s*$')
+    top_level_line = re.compile(r"^[A-Za-z0-9_-]+:\s*$")
+    package_key_line = re.compile(r"^\s{2}([^:][^#]*):\s*$")
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.rstrip()
         if not line or line.lstrip().startswith("#"):
@@ -595,11 +604,11 @@ def _parse_pnpm_lock(path: Path) -> list[Dependency]:
 
 def _parse_pnpm_package_key(key: str) -> tuple[str, str] | None:
     value = key.lstrip("/")
-    scoped = re.match(r'^(@[^/]+/[^@]+)@([^(/]+)', value)
+    scoped = re.match(r"^(@[^/]+/[^@]+)@([^(/]+)", value)
     if scoped is not None:
         name, version = scoped.group(1), scoped.group(2)
     else:
-        normal = re.match(r'^([^@/][^@]*)@([^(/]+)', value)
+        normal = re.match(r"^([^@/][^@]*)@([^(/]+)", value)
         if normal is None:
             return None
         name, version = normal.group(1), normal.group(2)

@@ -7,7 +7,13 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
 import httpx
-from tenacity import before_sleep_log, retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity import (
+    before_sleep_log,
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from .config import settings
 from .db import db, get_meta, set_meta
@@ -93,7 +99,10 @@ class NvdClient:
             LOGGER.warning("Rate limited by NVD API. Waiting %s seconds before retry.", sleep_for)
             await asyncio.sleep(sleep_for)
         resp.raise_for_status()
-        return resp.json()
+        payload = resp.json()
+        if not isinstance(payload, dict):
+            raise RuntimeError("Unexpected NVD response payload type")
+        return payload
 
 
 async def sync_nvd_delta(

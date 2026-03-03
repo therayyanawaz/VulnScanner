@@ -9,7 +9,13 @@ import pytest
 from click.testing import CliRunner
 
 import vulnscanner.cli as cli
-from vulnscanner.cli import _parse_dt, _render_scan_result, _resolve_scan_policy, _select_output_findings, main
+from vulnscanner.cli import (
+    _parse_dt,
+    _render_scan_result,
+    _resolve_scan_policy,
+    _select_output_findings,
+    main,
+)
 from vulnscanner.osv import ScanFinding, ScanResult
 
 
@@ -155,7 +161,9 @@ def test_man_page_exists_with_expected_sections() -> None:
     assert ".SH EXIT CODES" in text
 
 
-def test_scan_deps_no_network_warns_on_cache_miss(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_scan_deps_no_network_warns_on_cache_miss(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     manifest = tmp_path / "requirements.txt"
     manifest.write_text("flask==3.0.3\n", encoding="utf-8")
 
@@ -181,7 +189,9 @@ def test_scan_deps_strict_cache_requires_no_network(tmp_path) -> None:
     assert "--strict-cache requires --no-network" in result.output
 
 
-def test_scan_deps_strict_cache_fails_on_cache_miss(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_scan_deps_strict_cache_fails_on_cache_miss(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     manifest = tmp_path / "requirements.txt"
     manifest.write_text("flask==3.0.3\n", encoding="utf-8")
 
@@ -197,7 +207,9 @@ def test_scan_deps_strict_cache_fails_on_cache_miss(tmp_path, monkeypatch: pytes
     assert "Policy failed: cache_miss=2" in result.output
 
 
-def test_scan_deps_policy_failure_uses_policy_exit_code(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_scan_deps_policy_failure_uses_policy_exit_code(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     manifest = tmp_path / "requirements.txt"
     manifest.write_text("flask==3.0.3\n", encoding="utf-8")
 
@@ -359,7 +371,9 @@ def test_scan_deps_top_limits_table_rows(tmp_path, monkeypatch: pytest.MonkeyPat
     assert "Displayed findings: 1 of 2" in result.output
 
 
-def test_scan_deps_baseline_new_only_filters_results(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_scan_deps_baseline_new_only_filters_results(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     manifest = tmp_path / "requirements.txt"
     manifest.write_text("flask==3.0.3\n", encoding="utf-8")
     baseline = tmp_path / "baseline.json"
@@ -411,7 +425,15 @@ def test_scan_deps_baseline_new_only_filters_results(tmp_path, monkeypatch: pyte
     runner = CliRunner()
     result = runner.invoke(
         main,
-        ["scan-deps", str(manifest), "--baseline", str(baseline), "--new-only", "--format", "table"],
+        [
+            "scan-deps",
+            str(manifest),
+            "--baseline",
+            str(baseline),
+            "--new-only",
+            "--format",
+            "table",
+        ],
     )
     assert result.exit_code == 0
     assert "OSV-NEW" in result.output
@@ -466,7 +488,15 @@ def test_scan_deps_baseline_uses_ecosystem_when_available(
     runner = CliRunner()
     result = runner.invoke(
         main,
-        ["scan-deps", str(manifest), "--baseline", str(baseline), "--new-only", "--format", "table"],
+        [
+            "scan-deps",
+            str(manifest),
+            "--baseline",
+            str(baseline),
+            "--new-only",
+            "--format",
+            "table",
+        ],
     )
     assert result.exit_code == 0
     assert "OSV-SHARED" in result.output

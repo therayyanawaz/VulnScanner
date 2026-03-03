@@ -40,20 +40,23 @@ def sync_epss(force: bool = False) -> dict[str, int | bool]:
                     percentile=excluded.percentile,
                     fetched_at=excluded.fetched_at
                 """,
-                ((cve_id, score, percentile, now.isoformat()) for cve_id, score, percentile in chunk),
+                (
+                    (cve_id, score, percentile, now.isoformat())
+                    for cve_id, score, percentile in chunk
+                ),
             )
 
         conn.execute("UPDATE cves SET epss_score=NULL, epss_percentile=NULL")
-        conn.execute(
-            """
+        conn.execute("""
             UPDATE cves
             SET
                 epss_score = (SELECT e.score FROM epss e WHERE e.cve_id = cves.cve_id),
                 epss_percentile = (SELECT e.percentile FROM epss e WHERE e.cve_id = cves.cve_id)
             WHERE cve_id IN (SELECT cve_id FROM epss)
-            """
-        )
-        matched = conn.execute("SELECT COUNT(*) FROM cves WHERE epss_score IS NOT NULL").fetchone()[0]
+            """)
+        matched = conn.execute("SELECT COUNT(*) FROM cves WHERE epss_score IS NOT NULL").fetchone()[
+            0
+        ]
 
     set_meta("epss_last_sync", now.isoformat())
     return {"skipped": False, "epss_records": len(rows), "matched_cves": int(matched)}
@@ -61,7 +64,9 @@ def sync_epss(force: bool = False) -> dict[str, int | bool]:
 
 def _iter_epss_rows(content: bytes) -> list[tuple[str, float, float]]:
     decompressed = gzip.decompress(content).decode("utf-8", errors="replace")
-    filtered_lines = [line for line in decompressed.splitlines() if line and not line.startswith("#")]
+    filtered_lines = [
+        line for line in decompressed.splitlines() if line and not line.startswith("#")
+    ]
     reader = csv.DictReader(StringIO("\n".join(filtered_lines)))
     rows: list[tuple[str, float, float]] = []
     for item in reader:
