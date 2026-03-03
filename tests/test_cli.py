@@ -380,6 +380,60 @@ def test_scan_deps_baseline_new_only_filters_results(tmp_path, monkeypatch: pyte
     assert "Baseline comparison: 1 new / 2 current findings" in result.output
 
 
+def test_scan_deps_baseline_uses_ecosystem_when_available(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest = tmp_path / "requirements.txt"
+    manifest.write_text("flask==3.0.3\n", encoding="utf-8")
+    baseline = tmp_path / "baseline.json"
+    baseline.write_text(
+        json.dumps(
+            {
+                "findings": [
+                    {
+                        "id": "OSV-SHARED",
+                        "package": "demo",
+                        "version": "1.0.0",
+                        "ecosystem": "npm",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    async def _fake_scan(path, allow_network=True):
+        _ = allow_network
+        assert path == manifest
+        return ScanResult(
+            dependencies_total=1,
+            cache_hits=0,
+            cache_misses=0,
+            findings=(
+                ScanFinding(
+                    vuln_id="OSV-SHARED",
+                    package="demo",
+                    ecosystem="PyPI",
+                    version="1.0.0",
+                    severity="high",
+                    aliases=(),
+                    summary="Cross-ecosystem finding",
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(cli, "scan_dependency_manifest", _fake_scan)
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["scan-deps", str(manifest), "--baseline", str(baseline), "--new-only", "--format", "table"],
+    )
+    assert result.exit_code == 0
+    assert "OSV-SHARED" in result.output
+    assert "Baseline comparison: 1 new / 1 current findings" in result.output
+
+
 def test_scan_deps_invalid_baseline_uses_scan_failed_exit_code(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,

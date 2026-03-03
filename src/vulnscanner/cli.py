@@ -563,7 +563,7 @@ def _sort_findings(findings: tuple[ScanFinding, ...], sort_by: str) -> list[Scan
     raise ValueError(f"Unsupported sort field: {sort_by}")
 
 
-def _load_baseline_finding_keys(path: Path) -> set[tuple[str, str, str]]:
+def _load_baseline_finding_keys(path: Path) -> tuple[set[tuple[str, str, str, str]], set[tuple[str, str, str]]]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except Exception as exc:
@@ -573,27 +573,41 @@ def _load_baseline_finding_keys(path: Path) -> set[tuple[str, str, str]]:
     findings = data.get("findings")
     if not isinstance(findings, list):
         raise ValueError("missing findings array")
-    keys: set[tuple[str, str, str]] = set()
+    keyed_with_ecosystem: set[tuple[str, str, str, str]] = set()
+    keyed_legacy: set[tuple[str, str, str]] = set()
     for item in findings:
         if not isinstance(item, dict):
             continue
         vuln_id = item.get("id")
         package = item.get("package")
         version = item.get("version")
+        ecosystem = item.get("ecosystem")
         if not isinstance(vuln_id, str) or not isinstance(package, str) or not isinstance(version, str):
             continue
-        keys.add((vuln_id, package, version))
-    return keys
+        if isinstance(ecosystem, str):
+            keyed_with_ecosystem.add((vuln_id, package, version, ecosystem))
+        else:
+            keyed_legacy.add((vuln_id, package, version))
+    return keyed_with_ecosystem, keyed_legacy
 
 
 def _filter_new_findings(
     result: ScanResult,
-    baseline_keys: set[tuple[str, str, str]],
+    baseline_keys: tuple[set[tuple[str, str, str, str]], set[tuple[str, str, str]]],
 ) -> ScanResult:
+    baseline_with_ecosystem, baseline_legacy = baseline_keys
+
+    def is_in_baseline(finding: ScanFinding) -> bool:
+        ecosystem_key = (finding.vuln_id, finding.package, finding.version, finding.ecosystem)
+        if ecosystem_key in baseline_with_ecosystem:
+            return True
+        legacy_key = (finding.vuln_id, finding.package, finding.version)
+        return legacy_key in baseline_legacy
+
     filtered = tuple(
         finding
         for finding in result.findings
-        if (finding.vuln_id, finding.package, finding.version) not in baseline_keys
+        if not is_in_baseline(finding)
     )
     return ScanResult(
         dependencies_total=result.dependencies_total,
