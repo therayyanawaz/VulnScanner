@@ -38,6 +38,37 @@ def get_cached_osv(ecosystem: str, package: str, version: str) -> dict[str, Any]
         return json_loads(row[1])
 
 
+def cache_osv_vuln(vuln_id: str, payload: dict[str, Any]) -> None:
+    now = datetime.now(timezone.utc)
+    with db() as conn:
+        conn.execute(
+            """
+            INSERT INTO osv_vuln_cache (vuln_id, fetched_at, json)
+            VALUES (?, ?, ?)
+            ON CONFLICT(vuln_id) DO UPDATE SET
+                fetched_at=excluded.fetched_at,
+                json=excluded.json
+            """,
+            (vuln_id, now.isoformat(), json_dumps(payload)),
+        )
+
+
+def get_cached_osv_vuln(vuln_id: str) -> dict[str, Any] | None:
+    ttl = timedelta(hours=settings.osv_ttl_hours)
+    threshold = datetime.now(timezone.utc) - ttl
+    with db() as conn:
+        row = conn.execute(
+            "SELECT fetched_at, json FROM osv_vuln_cache WHERE vuln_id=?",
+            (vuln_id,),
+        ).fetchone()
+        if not row:
+            return None
+        fetched_at = datetime.fromisoformat(row[0])
+        if fetched_at < threshold:
+            return None
+        return json_loads(row[1])
+
+
 def json_dumps(data: Any) -> str:
     import json
 

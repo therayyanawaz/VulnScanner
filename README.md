@@ -60,7 +60,7 @@ python -m venv .venv
 # On Windows:
 .venv\Scripts\activate
 # On Linux/Mac:
-# source .venv/bin/activate
+source .venv/bin/activate
 
 # 3. Install the package
 pip install -e .
@@ -73,7 +73,7 @@ export NVD_API_KEY="your-nvd-api-key-here"
 vulnscanner nvd-sync --since "2024-08-01T00:00:00Z"
 ```
 
-### ✅ **Phase 1: MVP Dependency Scanning**
+### 🔄 **Phase 1: MVP Dependency Scanning (In Progress)**
 
 * Use `osv-scanner` to detect vulnerable dependencies
 * Enrich output with NVD (CVSS/CPE/CWE), KEV (exploited), and EPSS (likelihood)
@@ -180,7 +180,7 @@ VULNSCANNER_DB="./vulnscanner.db"
 # NVD API settings
 NVD_API_KEY="your-key-here"         # Optional: increases rate limit
 NVD_MAX_PER_30S="50"               # With key: 50, without: 5
-NVD_MAX_DAYS_PER_REQUEST="7"       # Window size for delta sync
+NVD_MAX_DAYS_PER_REQUEST="3"       # Window size for delta sync
 
 # Cache TTLs (hours)
 OSV_TTL_HOURS="12"                 # OSV package cache lifetime
@@ -188,7 +188,7 @@ KEV_TTL_HOURS="24"                 # CISA KEV cache lifetime
 EPSS_TTL_HOURS="720"               # EPSS cache lifetime (30 days)
 
 # User agent for API requests
-VULNSCANNER_UA="VulnScanner/0.0.1 (+https://github.com/therayyanawaz/VulnScanner)"
+VULNSCANNER_UA="VulnScanner/0.2.0 (+https://github.com/therayyanawaz/VulnScanner)"
 ```
 
 ### Technical Implementation Details
@@ -290,7 +290,7 @@ VULNSCANNER_UA="VulnScanner/0.0.1 (+https://github.com/therayyanawaz/VulnScanner
 ### Prerequisites
 
 Before you begin, ensure you have the following installed on your system:
-- **Python 3.8 or higher** - [Download from python.org](https://www.python.org/downloads/)
+- **Python 3.10 or higher** - [Download from python.org](https://www.python.org/downloads/)
 - **pip** (included with Python)
 - **Git** - [Download from git-scm.com](https://git-scm.com/)
 
@@ -332,27 +332,40 @@ conn.close()
 ### Available Commands
 
 ```bash
+# Currently implemented commands:
+
 # Sync CVEs from a specific date range
 vulnscanner nvd-sync --since "2024-08-01T00:00:00Z" --until "2024-08-02T00:00:00Z"
 
 # Debug mode with verbose logging
 vulnscanner nvd-sync --since "2024-08-01T00:00:00Z" --debug
 
+# Scan dependencies from package-lock.json or requirements.txt
+vulnscanner scan-deps package-lock.json
+
+# Fail CI when high/critical vulnerabilities are found
+vulnscanner scan-deps package-lock.json --fail-on high
+
+# JSON output for pipelines
+vulnscanner scan-deps requirements.txt --format json --output reports/deps.json
+
+# Sync CISA KEV feed and mark exploited CVEs in local DB
+vulnscanner kev-sync
+
 # Help
 vulnscanner --help
 vulnscanner nvd-sync --help
+vulnscanner scan-deps --help
+vulnscanner kev-sync --help
 ```
 
 ### Future Phases (Coming Soon)
 
 ```bash
-# Phase 1: Dependency scanning with OSV
-vulnscanner scan-deps package-lock.json
-
-# Phase 2: Container scanning integration  
+# Phase 2 (planned): Container scanning integration  
 vulnscanner scan-image nginx:latest
 
-# Phase 3: SBOM analysis
+# Phase 3 (planned): SBOM analysis
 vulnscanner scan-sbom app.spdx.json
 ```
 
@@ -427,10 +440,10 @@ All tooling and data referenced here are open source and fall under their respec
 - [x] Database schemas for enrichment (KEV, EPSS)
 
 ### 🔄 In Progress (Phase 1)
-- [ ] OSV API client for package vulnerability lookups
-- [ ] CISA KEV enrichment integration
+- [x] OSV API client for package vulnerability lookups
+- [x] CISA KEV enrichment integration (`kev-sync`)
 - [ ] EPSS scoring integration
-- [ ] Basic dependency scanning workflow
+- [x] Basic dependency scanning workflow (`scan-deps`)
 
 ### 📋 Planned (Phase 2+)
 - [ ] Container and OS image scanning

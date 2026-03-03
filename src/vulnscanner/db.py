@@ -5,11 +5,12 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-from .config import settings
+from .config import Settings, settings
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
 PRAGMA foreign_keys=ON;
+PRAGMA synchronous=NORMAL;
 
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
@@ -36,6 +37,12 @@ CREATE TABLE IF NOT EXISTS osv_cache (
     PRIMARY KEY (ecosystem, package, version)
 );
 
+CREATE TABLE IF NOT EXISTS osv_vuln_cache (
+    vuln_id TEXT PRIMARY KEY,
+    fetched_at TIMESTAMP NOT NULL,
+    json BLOB NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS kev (
     cve_id TEXT PRIMARY KEY,
     json BLOB NOT NULL,
@@ -48,10 +55,13 @@ CREATE TABLE IF NOT EXISTS epss (
     percentile REAL NOT NULL,
     fetched_at TIMESTAMP NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_cves_modified ON cves(modified);
+CREATE INDEX IF NOT EXISTS idx_cves_source ON cves(source);
 """
 
 
-def ensure_database(current_settings: settings | None = None) -> None:
+def ensure_database(current_settings: Settings | None = None) -> None:
     if current_settings is None:
         current_settings = settings
     Path(current_settings.database_path).parent.mkdir(parents=True, exist_ok=True)
@@ -60,7 +70,7 @@ def ensure_database(current_settings: settings | None = None) -> None:
 
 
 @contextmanager
-def db(current_settings: settings | None = None) -> Iterator[sqlite3.Connection]:
+def db(current_settings: Settings | None = None) -> Iterator[sqlite3.Connection]:
     if current_settings is None:
         current_settings = settings
     ensure_database(current_settings)

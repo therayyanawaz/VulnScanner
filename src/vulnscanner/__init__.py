@@ -11,5 +11,7 @@ __all__ = [
     "config",
     "db",
     "nvd",
+    "kev",
     "caching",
+    "osv",
 ]
