@@ -114,13 +114,15 @@ def parse_dependency_manifest(path: str | Path) -> list[Dependency]:
         return _parse_package_lock(manifest)
     if lower_name == "poetry.lock":
         return _parse_poetry_lock(manifest)
+    if lower_name == "uv.lock":
+        return _parse_uv_lock(manifest)
     if lower_name == "pipfile.lock":
         return _parse_pipfile_lock(manifest)
     if lower_name.endswith(".txt"):
         return _parse_requirements(manifest)
     raise ValueError(
         "Unsupported manifest: "
-        f"{manifest.name}. Supported: package-lock.json, poetry.lock, Pipfile.lock, *.txt"
+        f"{manifest.name}. Supported: package-lock.json, poetry.lock, uv.lock, Pipfile.lock, *.txt"
     )
 
 
@@ -551,6 +553,15 @@ def _parse_requirements(path: Path) -> list[Dependency]:
 
 def _parse_poetry_lock(path: Path) -> list[Dependency]:
     data = _parse_toml_document(path)
+    return _extract_pypi_toml_packages(data)
+
+
+def _parse_uv_lock(path: Path) -> list[Dependency]:
+    data = _parse_toml_document(path)
+    return _extract_pypi_toml_packages(data)
+
+
+def _extract_pypi_toml_packages(data: dict[str, Any]) -> list[Dependency]:
     dependencies: list[Dependency] = []
     packages = data.get("package")
     if not isinstance(packages, list):

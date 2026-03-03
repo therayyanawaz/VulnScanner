@@ -119,6 +119,29 @@ def test_parse_poetry_lock(tmp_path: Path) -> None:
     assert len(deps) == 2
 
 
+def test_parse_uv_lock(tmp_path: Path) -> None:
+    path = tmp_path / "uv.lock"
+    path.write_text(
+        "\n".join(
+            [
+                "[[package]]",
+                'name = "httpx"',
+                'version = "0.27.0"',
+                "",
+                "[[package]]",
+                'name = "anyio"',
+                'version = "4.4.0"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    deps = parse_dependency_manifest(path)
+    assert Dependency("PyPI", "httpx", "0.27.0") in deps
+    assert Dependency("PyPI", "anyio", "4.4.0") in deps
+    assert len(deps) == 2
+
+
 def test_parse_poetry_lock_invalid_toml(tmp_path: Path) -> None:
     path = tmp_path / "poetry.lock"
     path.write_text("[[package]\nname='broken'\n", encoding="utf-8")
@@ -131,7 +154,7 @@ def test_parse_unsupported_manifest_lists_supported(tmp_path: Path) -> None:
     path.write_text("<project/>", encoding="utf-8")
     with pytest.raises(
         ValueError,
-        match=r"Supported: package-lock\.json, poetry\.lock, Pipfile\.lock, \*\.txt",
+        match=r"Supported: package-lock\.json, poetry\.lock, uv\.lock, Pipfile\.lock, \*\.txt",
     ):
         parse_dependency_manifest(path)
 
