@@ -118,6 +118,7 @@ def test_scan_deps_help_includes_no_network_option() -> None:
     result = runner.invoke(main, ["scan-deps", "--help"])
     assert result.exit_code == 0
     assert "--no-network" in result.output
+    assert "--strict-cache" in result.output
 
 
 def test_scan_deps_no_network_warns_on_cache_miss(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -134,3 +135,29 @@ def test_scan_deps_no_network_warns_on_cache_miss(tmp_path, monkeypatch: pytest.
     result = runner.invoke(main, ["scan-deps", str(manifest), "--no-network"])
     assert result.exit_code == 0
     assert "Cache-only mode skipped live OSV lookups for 1 dependencies" in result.output
+
+
+def test_scan_deps_strict_cache_requires_no_network(tmp_path) -> None:
+    manifest = tmp_path / "requirements.txt"
+    manifest.write_text("flask==3.0.3\n", encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["scan-deps", str(manifest), "--strict-cache"])
+    assert result.exit_code != 0
+    assert "--strict-cache requires --no-network" in result.output
+
+
+def test_scan_deps_strict_cache_fails_on_cache_miss(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    manifest = tmp_path / "requirements.txt"
+    manifest.write_text("flask==3.0.3\n", encoding="utf-8")
+
+    async def _fake_scan(path, allow_network=True):
+        assert path == manifest
+        assert allow_network is False
+        return ScanResult(dependencies_total=1, cache_hits=0, cache_misses=2, findings=())
+
+    monkeypatch.setattr(cli, "scan_dependency_manifest", _fake_scan)
+    runner = CliRunner()
+    result = runner.invoke(main, ["scan-deps", str(manifest), "--no-network", "--strict-cache"])
+    assert result.exit_code != 0
+    assert "Policy failed: cache_miss=2" in result.output

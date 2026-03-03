@@ -106,6 +106,11 @@ def nvd_sync(since_str: Optional[str], until_str: Optional[str], debug: bool) ->
     is_flag=True,
     help="Cache-only mode: do not query live OSV APIs for missing cache entries",
 )
+@click.option(
+    "--strict-cache",
+    is_flag=True,
+    help="Fail when cache misses are detected (requires --no-network)",
+)
 @click.option("--debug", is_flag=True, help="Enable debug logging")
 def scan_deps(
     manifest_path: Path,
@@ -119,12 +124,16 @@ def scan_deps(
     fail_on_epss: float | None,
     policy: str,
     no_network: bool,
+    strict_cache: bool,
     debug: bool,
 ) -> None:
     if debug:
         import logging
 
         logging.basicConfig(level=logging.DEBUG)
+
+    if strict_cache and not no_network:
+        raise click.BadParameter("--strict-cache requires --no-network", param_hint="--strict-cache")
 
     try:
         result = asyncio.run(scan_dependency_manifest(manifest_path, allow_network=not no_network))
@@ -165,6 +174,8 @@ def scan_deps(
         fail_on_kev=fail_on_kev,
         fail_on_epss=fail_on_epss,
     )
+    if strict_cache and result.cache_misses > 0:
+        failures.append(f"cache_miss={result.cache_misses}")
     if failures:
         raise click.ClickException(f"Policy failed: {', '.join(failures)}")
 

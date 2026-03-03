@@ -164,6 +164,7 @@ vulnscanner scan-deps package-lock.json
 vulnscanner scan-deps requirements.txt --format json --output reports/deps.json
 vulnscanner scan-deps Pipfile.lock --format sarif --output reports/deps.sarif
 vulnscanner scan-deps poetry.lock --no-network
+vulnscanner scan-deps poetry.lock --no-network --strict-cache
 ```
 
 Supported manifests:
@@ -183,6 +184,7 @@ Options:
 - `--fail-on-epss 0.0..1.0`
 - `--policy [none|balanced|strict]`
 - `--no-network` (cache-only mode; skips live OSV API lookups)
+- `--strict-cache` (requires `--no-network`; fails if cache misses are detected)
 - `--debug`
 
 ## Policy and Reporting
@@ -214,6 +216,9 @@ vulnscanner scan-deps package-lock.json --policy strict
 
 # Deterministic offline run using only cached results
 vulnscanner scan-deps poetry.lock --no-network
+
+# Deterministic offline hard gate (fail on cache misses)
+vulnscanner scan-deps poetry.lock --no-network --strict-cache
 ```
 
 ### Output formats
