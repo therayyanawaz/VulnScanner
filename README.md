@@ -31,6 +31,7 @@ VulnScanner ingests public vulnerability intel (NVD, KEV, EPSS), enriches local 
 - [🏗️ Architecture](#️-architecture)
 - [📡 Data Sources](#-data-sources)
 - [🚀 Quick Start](#-quick-start)
+- [📘 Manual Page](#-manual-page)
 - [🛠️ Command Reference](#️-command-reference)
 - [📏 Policy & Reporting](#-policy--reporting)
 - [🔢 Exit Codes](#-exit-codes)
@@ -142,6 +143,23 @@ vulnscanner epss-sync
 
 ```bash
 vulnscanner scan-deps package-lock.json --policy strict
+```
+
+---
+
+## 📘 Manual Page
+
+Quick CLI help:
+
+```bash
+vulnscanner -h
+vulnscanner scan-deps -h
+```
+
+Project man page:
+
+```bash
+man ./docs/man/vulnscanner.1
 ```
 
 ---

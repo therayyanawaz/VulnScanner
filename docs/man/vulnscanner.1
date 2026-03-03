@@ -1,0 +1,206 @@
+.TH VULNSCANNER 1 "March 2026" "VulnScanner" "User Commands"
+.SH NAME
+vulnscanner \- local-first vulnerability intelligence and dependency policy scanner
+.SH SYNOPSIS
+.B vulnscanner
+.RI [ OPTIONS ]
+.I COMMAND
+.RI [ COMMAND_OPTIONS ]
+.PP
+Primary commands:
+.br
+.B nvd-sync
+.br
+.B kev-sync
+.br
+.B epss-sync
+.br
+.B scan-deps
+.br
+.B state
+.br
+.B cache
+.SH DESCRIPTION
+.B vulnscanner
+syncs public vulnerability intelligence feeds (NVD, KEV, EPSS), stores normalized
+records in SQLite, scans dependency manifests through OSV, enriches findings with
+local CVE context, and applies CI-friendly policy gates.
+.PP
+Use
+.BR vulnscanner
+global help and
+.BR vulnscanner " COMMAND -h"
+for command-specific help.
+.SH GLOBAL OPTIONS
+.TP
+.B -h, --help
+Show help and exit.
+.SH COMMANDS
+.SS nvd-sync
+Sync NVD CVE deltas into the local database.
+.PP
+Usage:
+.br
+.B vulnscanner nvd-sync
+.RI [ --since TIME ]
+.RI [ --until TIME ]
+.RI [ --debug ]
+.TP
+.B --since TIME
+ISO8601 with timezone or relative time (for example: 7d, 12h, today, yesterday, now).
+.TP
+.B --until TIME
+ISO8601 with timezone or relative time.
+.TP
+.B --debug
+Enable debug logging and full traceback output.
+.SS kev-sync
+Sync CISA Known Exploited Vulnerabilities and update CVE exploitation flags.
+.PP
+Usage:
+.br
+.B vulnscanner kev-sync
+.RI [ --force ]
+.TP
+.B --force
+Bypass TTL freshness check and refresh immediately.
+.SS epss-sync
+Sync EPSS score feed and enrich matching CVEs.
+.PP
+Usage:
+.br
+.B vulnscanner epss-sync
+.RI [ --force ]
+.TP
+.B --force
+Bypass TTL freshness check and refresh immediately.
+.SS scan-deps
+Scan one manifest, render results, and enforce policy gates.
+.PP
+Usage:
+.br
+.B vulnscanner scan-deps
+.I MANIFEST_PATH
+.RI [ OPTIONS ]
+.PP
+Supported manifests:
+.br
+package-lock.json, yarn.lock, pnpm-lock.yaml, poetry.lock, uv.lock,
+Pipfile.lock, requirements.txt
+.PP
+Key options:
+.TP
+.B --format {table,json,csv,markdown,sarif}
+Select output format.
+.TP
+.B --output FILE
+Write rendered report to file.
+.TP
+.B --top N
+Limit detailed rows in table/markdown output.
+.TP
+.B --summary-only
+Show summary only for table/markdown output.
+.TP
+.B --sort-by {severity,epss,package,id}
+Sort field for display rows.
+.TP
+.B --baseline FILE
+Load previous JSON report for diff comparison.
+.TP
+.B --save-baseline FILE
+Write current filtered findings to JSON baseline.
+.TP
+.B --new-only
+With baseline, display only findings not in baseline.
+.TP
+.B --fail-on-new-only
+With baseline, apply fail gates to only new findings.
+.TP
+.B --fail-on {low,medium,high,critical}
+Fail policy when finding severity is at or above threshold.
+.TP
+.B --min-severity {low,medium,high,critical}
+Filter output and policy set to this minimum severity.
+.TP
+.B --kev-only
+Keep only known exploited findings.
+.TP
+.B --epss-min FLOAT
+Keep only findings with EPSS >= value.
+.TP
+.B --fail-on-kev
+Fail policy if any displayed finding is known exploited.
+.TP
+.B --fail-on-epss FLOAT
+Fail policy if any displayed finding has EPSS >= value.
+.TP
+.B --policy {none,balanced,strict}
+Apply policy preset defaults.
+.TP
+.B --no-network
+Cache-only mode; skip live OSV calls.
+.TP
+.B --strict-cache
+Requires no-network mode; fail if cache misses are detected.
+.TP
+.B --debug
+Enable debug logging.
+.SS state
+Inspect or reset sync checkpoint metadata.
+.PP
+Subcommands:
+.TP
+.B state show
+Show nvd_last_mod, kev_last_sync, epss_last_sync values.
+.TP
+.B state reset
+Reset one or more sync checkpoint keys.
+.SS cache
+Inspect or clear cache tables.
+.PP
+Subcommands:
+.TP
+.B cache stats
+Show table counts for cves, osv_cache, osv_vuln_cache, kev, epss.
+.TP
+.B cache clear
+Clear selected targets (osv, osv-vuln, kev, epss) or all targets.
+.SH EXIT CODES
+.TP
+.B 0
+Success.
+.TP
+.B 10
+Policy failure.
+.TP
+.B 11
+Strict cache miss failure.
+.TP
+.B 12
+Feed sync failure.
+.TP
+.B 13
+Dependency scan execution failure.
+.SH EXAMPLES
+.nf
+vulnscanner nvd-sync --since 7d --until now
+vulnscanner kev-sync --force
+vulnscanner scan-deps package-lock.json --policy strict
+vulnscanner scan-deps poetry.lock --no-network --strict-cache
+vulnscanner scan-deps package-lock.json --baseline reports/prev.json --new-only
+vulnscanner scan-deps package-lock.json --save-baseline reports/new-baseline.json
+vulnscanner cache stats --format json
+vulnscanner state reset --key nvd_last_mod
+.fi
+.SH FILES
+.TP
+.B vulnscanner.db
+Default SQLite database path (override with VULNSCANNER_DB).
+.TP
+.B docs/man/vulnscanner.1
+Project manual page source.
+.SH AUTHOR
+therayyanawaz
+.SH LICENSE
+MIT. See LICENSE in the project root.

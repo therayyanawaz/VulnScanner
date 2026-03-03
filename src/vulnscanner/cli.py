@@ -18,9 +18,21 @@ from .nvd import sync_nvd_delta
 from .osv import ScanFinding, ScanResult, filter_findings, policy_failures, scan_dependency_manifest
 
 
-@click.group()
+CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"], "max_content_width": 110}
+
+
+@click.group(context_settings=CONTEXT_SETTINGS)
 def main() -> None:
-    """VulnScanner CLI"""
+    """
+    VulnScanner command-line interface.
+
+    Core workflow:
+      1) Sync intelligence feeds (NVD / KEV / EPSS)
+      2) Scan dependency manifests with policy gates
+      3) Export reports (table/json/csv/markdown/sarif) for CI and security tooling
+
+    Use `vulnscanner <command> -h` for command-specific help and examples.
+    """
 
 
 STATE_META_KEYS = ("nvd_last_mod", "kev_last_sync", "epss_last_sync")
@@ -52,11 +64,18 @@ class ScanFailedError(ExitCodedClickException):
     exit_code = EXIT_SCAN_FAILED
 
 
-@main.command("nvd-sync")
+@main.command("nvd-sync", context_settings=CONTEXT_SETTINGS)
 @click.option("--since", "since_str", type=str, default=None, help="ISO8601 start time")
 @click.option("--until", "until_str", type=str, default=None, help="ISO8601 end time (default now)")
 @click.option("--debug", is_flag=True, help="Enable debug logging")
 def nvd_sync(since_str: Optional[str], until_str: Optional[str], debug: bool) -> None:
+    """
+    Sync NVD CVE records into the local SQLite database.
+
+    Examples:
+      vulnscanner nvd-sync --since "2024-08-01T00:00:00Z"
+      vulnscanner nvd-sync --since 7d --until now
+    """
     if debug:
         import logging
 
@@ -89,7 +108,7 @@ def nvd_sync(since_str: Optional[str], until_str: Optional[str], debug: bool) ->
         raise SyncFailedError(f"Sync failed: {e}") from e
 
 
-@main.command("scan-deps")
+@main.command("scan-deps", context_settings=CONTEXT_SETTINGS)
 @click.argument("manifest_path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option(
     "--format",
@@ -145,7 +164,7 @@ def nvd_sync(since_str: Optional[str], until_str: Optional[str], debug: bool) ->
     "--fail-on",
     type=click.Choice(["low", "medium", "high", "critical"], case_sensitive=False),
     default=None,
-    help="Exit with code 1 if a finding is at or above this severity",
+    help="Fail policy if a finding is at or above this severity",
 )
 @click.option(
     "--min-severity",
@@ -160,12 +179,12 @@ def nvd_sync(since_str: Optional[str], until_str: Optional[str], debug: bool) ->
     default=None,
     help="Only include findings with EPSS score at or above this value",
 )
-@click.option("--fail-on-kev", is_flag=True, help="Exit with code 1 if any displayed finding is known exploited")
+@click.option("--fail-on-kev", is_flag=True, help="Fail policy if any displayed finding is known exploited")
 @click.option(
     "--fail-on-epss",
     type=click.FloatRange(min=0.0, max=1.0),
     default=None,
-    help="Exit with code 1 if any displayed finding has EPSS score at or above this value",
+    help="Fail policy if any displayed finding has EPSS score at or above this value",
 )
 @click.option(
     "--policy",
@@ -206,6 +225,15 @@ def scan_deps(
     strict_cache: bool,
     debug: bool,
 ) -> None:
+    """
+    Scan a dependency manifest, enrich findings, and enforce policy gates.
+
+    Examples:
+      vulnscanner scan-deps package-lock.json --policy strict
+      vulnscanner scan-deps requirements.txt --format sarif --output reports/deps.sarif
+      vulnscanner scan-deps poetry.lock --no-network --strict-cache
+      vulnscanner scan-deps package-lock.json --baseline reports/prev.json --new-only
+    """
     if debug:
         import logging
 
@@ -302,9 +330,15 @@ def scan_deps(
         raise PolicyFailedError(message)
 
 
-@main.command("kev-sync")
+@main.command("kev-sync", context_settings=CONTEXT_SETTINGS)
 @click.option("--force", is_flag=True, help="Bypass TTL and refresh KEV feed now")
 def kev_sync(force: bool) -> None:
+    """
+    Sync CISA KEV data and mark known-exploited CVEs.
+
+    Example:
+      vulnscanner kev-sync --force
+    """
     ensure_database()
     try:
         stats = sync_kev(force=force)
@@ -320,9 +354,15 @@ def kev_sync(force: bool) -> None:
     )
 
 
-@main.command("epss-sync")
+@main.command("epss-sync", context_settings=CONTEXT_SETTINGS)
 @click.option("--force", is_flag=True, help="Bypass TTL and refresh EPSS feed now")
 def epss_sync(force: bool) -> None:
+    """
+    Sync EPSS scores and enrich matching local CVEs.
+
+    Example:
+      vulnscanner epss-sync --force
+    """
     ensure_database()
     try:
         stats = sync_epss(force=force)
@@ -338,12 +378,12 @@ def epss_sync(force: bool) -> None:
     )
 
 
-@main.group("state")
+@main.group("state", context_settings=CONTEXT_SETTINGS)
 def state() -> None:
     """Inspect or reset sync checkpoint state."""
 
 
-@state.command("show")
+@state.command("show", context_settings=CONTEXT_SETTINGS)
 @click.option(
     "--format",
     "output_format",
@@ -352,6 +392,13 @@ def state() -> None:
     show_default=True,
 )
 def state_show(output_format: str) -> None:
+    """
+    Show sync checkpoint metadata.
+
+    Examples:
+      vulnscanner state show
+      vulnscanner state show --format json
+    """
     ensure_database()
     values = {key: get_meta(key) for key in STATE_META_KEYS}
     if output_format.lower() == "json":
@@ -363,7 +410,7 @@ def state_show(output_format: str) -> None:
     click.echo("\n".join(lines))
 
 
-@state.command("reset")
+@state.command("reset", context_settings=CONTEXT_SETTINGS)
 @click.option(
     "--key",
     "keys",
@@ -372,6 +419,13 @@ def state_show(output_format: str) -> None:
     help="State key(s) to reset. Omit to reset all state keys.",
 )
 def state_reset(keys: tuple[str, ...]) -> None:
+    """
+    Reset one or more sync checkpoint keys.
+
+    Examples:
+      vulnscanner state reset
+      vulnscanner state reset --key nvd_last_mod
+    """
     ensure_database()
     targets = [item.lower() for item in keys] if keys else list(STATE_META_KEYS)
     for key in targets:
@@ -379,12 +433,12 @@ def state_reset(keys: tuple[str, ...]) -> None:
     click.echo(f"✅ Reset state keys: {', '.join(targets)}")
 
 
-@main.group("cache")
+@main.group("cache", context_settings=CONTEXT_SETTINGS)
 def cache() -> None:
     """Inspect or clear local cache tables."""
 
 
-@cache.command("stats")
+@cache.command("stats", context_settings=CONTEXT_SETTINGS)
 @click.option(
     "--format",
     "output_format",
@@ -393,6 +447,13 @@ def cache() -> None:
     show_default=True,
 )
 def cache_stats(output_format: str) -> None:
+    """
+    Show cache and table entry counts.
+
+    Examples:
+      vulnscanner cache stats
+      vulnscanner cache stats --format json
+    """
     ensure_database()
     with db() as conn:
         stats = {
@@ -411,7 +472,7 @@ def cache_stats(output_format: str) -> None:
     click.echo("\n".join(lines))
 
 
-@cache.command("clear")
+@cache.command("clear", context_settings=CONTEXT_SETTINGS)
 @click.option(
     "--target",
     "targets",
@@ -421,6 +482,14 @@ def cache_stats(output_format: str) -> None:
 )
 @click.option("--all", "clear_all", is_flag=True, help="Clear all cache targets")
 def cache_clear(targets: tuple[str, ...], clear_all: bool) -> None:
+    """
+    Clear selected cache targets.
+
+    Examples:
+      vulnscanner cache clear
+      vulnscanner cache clear --target kev --target epss
+      vulnscanner cache clear --all
+    """
     ensure_database()
     selected = {target.lower() for target in targets}
     if clear_all:

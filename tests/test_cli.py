@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
@@ -127,6 +128,31 @@ def test_scan_deps_help_includes_no_network_option() -> None:
     assert "--save-baseline" in result.output
     assert "--new-only" in result.output
     assert "--fail-on-new-only" in result.output
+
+
+def test_root_help_supports_short_h() -> None:
+    runner = CliRunner()
+    result = runner.invoke(main, ["-h"])
+    assert result.exit_code == 0
+    assert "Core workflow:" in result.output
+    assert "scan-deps" in result.output
+
+
+def test_scan_deps_help_supports_short_h() -> None:
+    runner = CliRunner()
+    result = runner.invoke(main, ["scan-deps", "-h"])
+    assert result.exit_code == 0
+    assert "Scan a dependency manifest" in result.output
+    assert "--strict-cache" in result.output
+
+
+def test_man_page_exists_with_expected_sections() -> None:
+    man_path = Path("docs/man/vulnscanner.1")
+    assert man_path.exists() is True
+    text = man_path.read_text(encoding="utf-8")
+    assert ".SH NAME" in text
+    assert ".SH COMMANDS" in text
+    assert ".SH EXIT CODES" in text
 
 
 def test_scan_deps_no_network_warns_on_cache_miss(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
