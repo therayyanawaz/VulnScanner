@@ -12,7 +12,7 @@ from .db import ensure_database
 from .epss import sync_epss
 from .kev import sync_kev
 from .nvd import sync_nvd_delta
-from .osv import ScanResult, scan_dependency_manifest, should_fail
+from .osv import ScanResult, filter_findings, policy_failures, scan_dependency_manifest
 
 
 @click.group()
@@ -67,12 +67,37 @@ def nvd_sync(since_str: Optional[str], until_str: Optional[str], debug: bool) ->
     default=None,
     help="Exit with code 1 if a finding is at or above this severity",
 )
+@click.option(
+    "--min-severity",
+    type=click.Choice(["low", "medium", "high", "critical"], case_sensitive=False),
+    default=None,
+    help="Only include findings at or above this severity in output and policy checks",
+)
+@click.option("--kev-only", is_flag=True, help="Only include findings that are marked as known exploited")
+@click.option(
+    "--epss-min",
+    type=click.FloatRange(min=0.0, max=1.0),
+    default=None,
+    help="Only include findings with EPSS score at or above this value",
+)
+@click.option("--fail-on-kev", is_flag=True, help="Exit with code 1 if any displayed finding is known exploited")
+@click.option(
+    "--fail-on-epss",
+    type=click.FloatRange(min=0.0, max=1.0),
+    default=None,
+    help="Exit with code 1 if any displayed finding has EPSS score at or above this value",
+)
 @click.option("--debug", is_flag=True, help="Enable debug logging")
 def scan_deps(
     manifest_path: Path,
     output_format: str,
     output_path: Path | None,
     fail_on: str | None,
+    min_severity: str | None,
+    kev_only: bool,
+    epss_min: float | None,
+    fail_on_kev: bool,
+    fail_on_epss: float | None,
     debug: bool,
 ) -> None:
     if debug:
@@ -82,6 +107,12 @@ def scan_deps(
 
     try:
         result = asyncio.run(scan_dependency_manifest(manifest_path))
+        result = filter_findings(
+            result,
+            min_severity=min_severity.lower() if min_severity else None,
+            kev_only=kev_only,
+            epss_min=epss_min,
+        )
     except Exception as exc:
         if debug:
             raise
@@ -95,8 +126,14 @@ def scan_deps(
     else:
         click.echo(rendered)
 
-    if should_fail(result, fail_on):
-        raise click.ClickException(f"Policy failed: found vulnerabilities at/above '{fail_on.lower()}'")
+    failures = policy_failures(
+        result,
+        severity_threshold=fail_on.lower() if fail_on else None,
+        fail_on_kev=fail_on_kev,
+        fail_on_epss=fail_on_epss,
+    )
+    if failures:
+        raise click.ClickException(f"Policy failed: {', '.join(failures)}")
 
 
 @main.command("kev-sync")

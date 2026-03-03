@@ -204,6 +204,53 @@ def should_fail(result: ScanResult, threshold: str | None) -> bool:
     return any(SEVERITY_ORDER.get(item.severity, 0) >= min_level for item in result.findings)
 
 
+def filter_findings(
+    result: ScanResult,
+    min_severity: str | None = None,
+    kev_only: bool = False,
+    epss_min: float | None = None,
+) -> ScanResult:
+    if min_severity is not None:
+        normalized = min_severity.lower()
+        if normalized not in SEVERITY_ORDER:
+            raise ValueError(f"Unsupported min_severity: {min_severity}")
+        min_level = SEVERITY_ORDER[normalized]
+    else:
+        min_level = None
+
+    findings = list(result.findings)
+    if min_level is not None:
+        findings = [item for item in findings if SEVERITY_ORDER.get(item.severity, 0) >= min_level]
+    if kev_only:
+        findings = [item for item in findings if item.is_known_exploited is True]
+    if epss_min is not None:
+        findings = [item for item in findings if item.epss_score is not None and item.epss_score >= epss_min]
+
+    return ScanResult(
+        dependencies_total=result.dependencies_total,
+        cache_hits=result.cache_hits,
+        cache_misses=result.cache_misses,
+        findings=tuple(findings),
+    )
+
+
+def policy_failures(
+    result: ScanResult,
+    severity_threshold: str | None = None,
+    fail_on_kev: bool = False,
+    fail_on_epss: float | None = None,
+) -> list[str]:
+    failures: list[str] = []
+    if should_fail(result, severity_threshold):
+        failures.append(f"severity>={severity_threshold.lower()}")
+    if fail_on_kev and any(item.is_known_exploited is True for item in result.findings):
+        failures.append("known_exploited")
+    if fail_on_epss is not None:
+        if any(item.epss_score is not None and item.epss_score >= fail_on_epss for item in result.findings):
+            failures.append(f"epss>={fail_on_epss}")
+    return failures
+
+
 def _normalize_query_result(result: dict[str, Any] | Any) -> dict[str, Any]:
     if not isinstance(result, dict):
         return {"vulns": []}

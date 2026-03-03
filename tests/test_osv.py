@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from vulnscanner.osv import (
     Dependency,
     ScanFinding,
@@ -10,7 +12,9 @@ from vulnscanner.osv import (
     _derive_npm_name_from_path,
     _extract_cve_ids,
     _extract_severity,
+    filter_findings,
     parse_dependency_manifest,
+    policy_failures,
     should_fail,
 )
 
@@ -130,3 +134,78 @@ def test_scan_result_enrichment_counters() -> None:
     )
     assert result.known_exploited_findings == 1
     assert result.epss_enriched_findings == 1
+
+
+def test_filter_findings_applies_all_filters() -> None:
+    result = ScanResult(
+        dependencies_total=2,
+        cache_hits=1,
+        cache_misses=1,
+        findings=(
+            ScanFinding(
+                vuln_id="A",
+                package="demo",
+                ecosystem="npm",
+                version="1.0.0",
+                severity="high",
+                aliases=(),
+                summary="",
+                is_known_exploited=True,
+                epss_score=0.9,
+            ),
+            ScanFinding(
+                vuln_id="B",
+                package="demo",
+                ecosystem="npm",
+                version="1.0.0",
+                severity="medium",
+                aliases=(),
+                summary="",
+                is_known_exploited=False,
+                epss_score=0.3,
+            ),
+            ScanFinding(
+                vuln_id="C",
+                package="demo",
+                ecosystem="npm",
+                version="1.0.0",
+                severity="critical",
+                aliases=(),
+                summary="",
+                is_known_exploited=False,
+                epss_score=0.95,
+            ),
+        ),
+    )
+    filtered = filter_findings(result, min_severity="high", kev_only=True, epss_min=0.5)
+    assert len(filtered.findings) == 1
+    assert filtered.findings[0].vuln_id == "A"
+
+
+def test_filter_findings_rejects_invalid_severity() -> None:
+    result = ScanResult(dependencies_total=0, cache_hits=0, cache_misses=0, findings=())
+    with pytest.raises(ValueError):
+        filter_findings(result, min_severity="invalid")
+
+
+def test_policy_failures_combined() -> None:
+    result = ScanResult(
+        dependencies_total=1,
+        cache_hits=0,
+        cache_misses=1,
+        findings=(
+            ScanFinding(
+                vuln_id="A",
+                package="demo",
+                ecosystem="npm",
+                version="1.0.0",
+                severity="high",
+                aliases=(),
+                summary="",
+                is_known_exploited=True,
+                epss_score=0.7,
+            ),
+        ),
+    )
+    failures = policy_failures(result, severity_threshold="medium", fail_on_kev=True, fail_on_epss=0.5)
+    assert failures == ["severity>=medium", "known_exploited", "epss>=0.5"]

@@ -346,6 +346,12 @@ vulnscanner scan-deps package-lock.json
 # Fail CI when high/critical vulnerabilities are found
 vulnscanner scan-deps package-lock.json --fail-on high
 
+# Filter output to exploitable/high-risk findings only
+vulnscanner scan-deps package-lock.json --min-severity high --kev-only --epss-min 0.5
+
+# Fail when any displayed finding is KEV or has EPSS >= 0.7
+vulnscanner scan-deps package-lock.json --fail-on-kev --fail-on-epss 0.7
+
 # JSON output for pipelines
 vulnscanner scan-deps requirements.txt --format json --output reports/deps.json
 
