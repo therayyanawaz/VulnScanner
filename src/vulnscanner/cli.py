@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import csv
+import io
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -59,7 +61,7 @@ def nvd_sync(since_str: Optional[str], until_str: Optional[str], debug: bool) ->
 
 @main.command("scan-deps")
 @click.argument("manifest_path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
-@click.option("--format", "output_format", type=click.Choice(["table", "json"]), default="table")
+@click.option("--format", "output_format", type=click.Choice(["table", "json", "csv", "markdown"]), default="table")
 @click.option("--output", "output_path", type=click.Path(dir_okay=False, path_type=Path), default=None)
 @click.option(
     "--fail-on",
@@ -87,6 +89,12 @@ def nvd_sync(since_str: Optional[str], until_str: Optional[str], debug: bool) ->
     default=None,
     help="Exit with code 1 if any displayed finding has EPSS score at or above this value",
 )
+@click.option(
+    "--policy",
+    type=click.Choice(["none", "balanced", "strict"], case_sensitive=False),
+    default="none",
+    help="Apply preset policy defaults (can be overridden by explicit fail options)",
+)
 @click.option("--debug", is_flag=True, help="Enable debug logging")
 def scan_deps(
     manifest_path: Path,
@@ -98,6 +106,7 @@ def scan_deps(
     epss_min: float | None,
     fail_on_kev: bool,
     fail_on_epss: float | None,
+    policy: str,
     debug: bool,
 ) -> None:
     if debug:
@@ -126,9 +135,15 @@ def scan_deps(
     else:
         click.echo(rendered)
 
+    fail_on, fail_on_kev, fail_on_epss = _resolve_scan_policy(
+        policy=policy.lower(),
+        fail_on=fail_on.lower() if fail_on else None,
+        fail_on_kev=fail_on_kev,
+        fail_on_epss=fail_on_epss,
+    )
     failures = policy_failures(
         result,
-        severity_threshold=fail_on.lower() if fail_on else None,
+        severity_threshold=fail_on,
         fail_on_kev=fail_on_kev,
         fail_on_epss=fail_on_epss,
     )
@@ -175,6 +190,10 @@ def epss_sync(force: bool) -> None:
 def _render_scan_result(result: ScanResult, output_format: str) -> str:
     if output_format == "json":
         return json.dumps(result.as_dict(), indent=2)
+    if output_format == "csv":
+        return _render_csv(result)
+    if output_format == "markdown":
+        return _render_markdown(result)
     lines = [
         f"Dependencies scanned: {result.dependencies_total}",
         f"Cache hits: {result.cache_hits}",
@@ -206,6 +225,96 @@ def _render_scan_result(result: ScanResult, output_format: str) -> str:
                 f"{finding.package}@{finding.version} ({finding.ecosystem}){suffix}"
             )
     return "\n".join(lines)
+
+
+def _render_csv(result: ScanResult) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "id",
+            "package",
+            "ecosystem",
+            "version",
+            "severity",
+            "cve_id",
+            "is_known_exploited",
+            "epss_score",
+            "epss_percentile",
+            "aliases",
+            "summary",
+        ]
+    )
+    for finding in result.findings:
+        writer.writerow(
+            [
+                finding.vuln_id,
+                finding.package,
+                finding.ecosystem,
+                finding.version,
+                finding.severity,
+                finding.cve_id or "",
+                "true" if finding.is_known_exploited is True else "false",
+                "" if finding.epss_score is None else f"{finding.epss_score:.6f}",
+                "" if finding.epss_percentile is None else f"{finding.epss_percentile:.6f}",
+                ";".join(finding.aliases),
+                finding.summary,
+            ]
+        )
+    return output.getvalue().rstrip("\n")
+
+
+def _render_markdown(result: ScanResult) -> str:
+    lines = [
+        "# Dependency Scan Report",
+        "",
+        f"- Dependencies scanned: **{result.dependencies_total}**",
+        f"- Findings: **{len(result.findings)}**",
+        f"- Known exploited findings: **{result.known_exploited_findings}**",
+        f"- EPSS-enriched findings: **{result.epss_enriched_findings}**",
+        "",
+    ]
+    counts = result.severity_counts
+    lines.append(
+        "| Critical | High | Medium | Low | Unknown |\n"
+        "| ---: | ---: | ---: | ---: | ---: |\n"
+        f"| {counts['critical']} | {counts['high']} | {counts['medium']} | {counts['low']} | {counts['unknown']} |"
+    )
+    lines.append("")
+    lines.append(
+        "| Severity | ID | Package | CVE | KEV | EPSS | Summary |\n"
+        "| --- | --- | --- | --- | --- | --- | --- |"
+    )
+    for finding in result.findings:
+        summary = finding.summary.replace("\n", " ").strip()
+        if len(summary) > 120:
+            summary = summary[:117] + "..."
+        lines.append(
+            "| "
+            f"{finding.severity} | "
+            f"{finding.vuln_id} | "
+            f"{finding.package}@{finding.version} | "
+            f"{finding.cve_id or ''} | "
+            f"{'yes' if finding.is_known_exploited else 'no'} | "
+            f"{'' if finding.epss_score is None else f'{finding.epss_score:.5f}'} | "
+            f"{summary} |"
+        )
+    return "\n".join(lines)
+
+
+def _resolve_scan_policy(
+    policy: str,
+    fail_on: str | None,
+    fail_on_kev: bool,
+    fail_on_epss: float | None,
+) -> tuple[str | None, bool, float | None]:
+    if policy == "none":
+        return fail_on, fail_on_kev, fail_on_epss
+    if policy == "balanced":
+        return fail_on or "critical", fail_on_kev, fail_on_epss if fail_on_epss is not None else 0.9
+    if policy == "strict":
+        return fail_on or "high", fail_on_kev, fail_on_epss if fail_on_epss is not None else 0.7
+    raise ValueError(f"Unsupported policy: {policy}")
 
 
 def _parse_datetime_option(value: str | None, option_name: str) -> datetime | None:

@@ -352,8 +352,15 @@ vulnscanner scan-deps package-lock.json --min-severity high --kev-only --epss-mi
 # Fail when any displayed finding is KEV or has EPSS >= 0.7
 vulnscanner scan-deps package-lock.json --fail-on-kev --fail-on-epss 0.7
 
+# Use preset policy defaults for CI
+vulnscanner scan-deps package-lock.json --policy strict
+
 # JSON output for pipelines
 vulnscanner scan-deps requirements.txt --format json --output reports/deps.json
+
+# Export CSV/Markdown reports
+vulnscanner scan-deps requirements.txt --format csv --output reports/deps.csv
+vulnscanner scan-deps requirements.txt --format markdown --output reports/deps.md
 
 # Sync CISA KEV feed and mark exploited CVEs in local DB
 vulnscanner kev-sync
