@@ -62,6 +62,40 @@ def test_parse_requirements_txt(tmp_path: Path) -> None:
     ]
 
 
+def test_parse_pipfile_lock(tmp_path: Path) -> None:
+    path = tmp_path / "Pipfile.lock"
+    path.write_text(
+        json.dumps(
+            {
+                "_meta": {"hash": {"sha256": "demo"}},
+                "default": {
+                    "flask": {"version": "==3.0.3"},
+                    "requests": {"version": ">=2.0.0"},
+                },
+                "develop": {
+                    "pytest": {"version": "==8.3.0"},
+                    "black": {"version": "===24.8.0"},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    deps = parse_dependency_manifest(path)
+    assert Dependency("PyPI", "flask", "3.0.3") in deps
+    assert Dependency("PyPI", "pytest", "8.3.0") in deps
+    assert Dependency("PyPI", "black", "24.8.0") in deps
+    assert Dependency("PyPI", "requests", "2.0.0") not in deps
+    assert len(deps) == 3
+
+
+def test_parse_unsupported_manifest_lists_supported(tmp_path: Path) -> None:
+    path = tmp_path / "pom.xml"
+    path.write_text("<project/>", encoding="utf-8")
+    with pytest.raises(ValueError, match=r"Supported: package-lock\.json, Pipfile\.lock, \*\.txt"):
+        parse_dependency_manifest(path)
+
+
 def test_derive_npm_name_from_path() -> None:
     assert _derive_npm_name_from_path("node_modules/lodash") == "lodash"
     assert _derive_npm_name_from_path("node_modules/@scope/pkg") == "@scope/pkg"

@@ -50,7 +50,7 @@ VulnScanner ingests and normalizes public vulnerability data into a local SQLite
 - `nvd-sync`: Incremental CVE ingestion from NVD with time-window chunking, retries, and API-key-aware rate limits.
 - `kev-sync`: Imports CISA Known Exploited Vulnerabilities and marks matching local CVEs.
 - `epss-sync`: Imports EPSS score feed and enriches local CVEs with `epss_score` and `epss_percentile`.
-- `scan-deps`: Scans `package-lock.json` or `requirements.txt` through OSV, enriches findings with local CVE/KEV/EPSS context, and enforces CI policy gates.
+- `scan-deps`: Scans `package-lock.json`, `Pipfile.lock`, or `requirements.txt` through OSV, enriches findings with local CVE/KEV/EPSS context, and enforces CI policy gates.
 
 ## Architecture
 
@@ -165,6 +165,7 @@ vulnscanner scan-deps requirements.txt --format json --output reports/deps.json
 
 Supported manifests:
 - `package-lock.json`
+- `Pipfile.lock` (exact lock entries: `==version` or `===version`)
 - `requirements.txt` (exact pins: `pkg==version`)
 
 Options:

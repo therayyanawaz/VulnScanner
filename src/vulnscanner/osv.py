@@ -102,9 +102,13 @@ def parse_dependency_manifest(path: str | Path) -> list[Dependency]:
     lower_name = manifest.name.lower()
     if lower_name.endswith("package-lock.json"):
         return _parse_package_lock(manifest)
+    if lower_name == "pipfile.lock":
+        return _parse_pipfile_lock(manifest)
     if lower_name.endswith(".txt"):
         return _parse_requirements(manifest)
-    raise ValueError(f"Unsupported manifest: {manifest.name}")
+    raise ValueError(
+        f"Unsupported manifest: {manifest.name}. Supported: package-lock.json, Pipfile.lock, *.txt"
+    )
 
 
 async def scan_dependency_manifest(path: str | Path) -> ScanResult:
@@ -443,6 +447,36 @@ def _parse_requirements(path: Path) -> list[Dependency]:
         package, version = match.groups()
         dependencies.append(Dependency(ecosystem="PyPI", name=package, version=version))
     return _dedupe_dependencies(dependencies)
+
+
+def _parse_pipfile_lock(path: Path) -> list[Dependency]:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    dependencies: list[Dependency] = []
+    for section in ("default", "develop"):
+        packages = data.get(section)
+        if not isinstance(packages, dict):
+            continue
+        for package, metadata in packages.items():
+            if not isinstance(package, str) or not isinstance(metadata, dict):
+                continue
+            raw_version = metadata.get("version")
+            if not isinstance(raw_version, str):
+                continue
+            version = _parse_exact_locked_version(raw_version)
+            if version is None:
+                continue
+            dependencies.append(Dependency(ecosystem="PyPI", name=package, version=version))
+    return _dedupe_dependencies(dependencies)
+
+
+def _parse_exact_locked_version(value: str) -> str | None:
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    match = re.match(r"^={2,3}\s*([A-Za-z0-9_.!+\-]+)$", cleaned)
+    if not match:
+        return None
+    return match.group(1)
 
 
 def _dedupe_dependencies(items: list[Dependency]) -> list[Dependency]:
