@@ -1,44 +1,51 @@
-# VulnScanner
+# 🔎 VulnScanner
 
 [![CI](https://github.com/therayyanawaz/VulnScanner/actions/workflows/ci.yml/badge.svg)](https://github.com/therayyanawaz/VulnScanner/actions/workflows/ci.yml)
 [![Release](https://github.com/therayyanawaz/VulnScanner/actions/workflows/release.yml/badge.svg)](https://github.com/therayyanawaz/VulnScanner/actions/workflows/release.yml)
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE)
+[![Formats](https://img.shields.io/badge/reporting-json%20%7C%20csv%20%7C%20markdown%20%7C%20sarif-0ea5e9)](#-output-formats)
 
-Open-source vulnerability intelligence pipeline built for developers and security teams that want strong signal without paid feeds.
+**Local-first vulnerability intelligence for modern dependency risk workflows.**
 
-VulnScanner ingests and normalizes public vulnerability data into a local SQLite store, then applies that intelligence to dependency manifests with practical CI policy controls.
+VulnScanner ingests public vulnerability intel (NVD, KEV, EPSS), enriches local CVEs in SQLite, and scans lockfiles/manifests with deterministic CI policy gates, offline cache mode, and baseline diffing.
 
-## Table of Contents
+---
 
-- [Why VulnScanner](#why-vulnscanner)
-- [Current Feature Set](#current-feature-set)
-- [Architecture](#architecture)
-- [Data Sources](#data-sources)
-- [Quick Start](#quick-start)
-- [Command Reference](#command-reference)
-- [Policy and Reporting](#policy-and-reporting)
-- [Configuration](#configuration)
-- [Database Model](#database-model)
-- [CI/CD Integration](#cicd-integration)
-- [Roadmap](#roadmap)
-- [Contributing](#contributing)
-- [License](#license)
+## ✨ Why VulnScanner
 
-## Why VulnScanner
+- 🧠 **Signal-rich**: severity + KEV exploited status + EPSS probability.
+- 🏠 **Local-first**: SQLite-backed caching for repeatable scans.
+- 🛡️ **CI-ready gates**: fail by severity, KEV, EPSS, strict cache, and new-only diff policy.
+- ⚡ **Operationally hardened**: retries, backoff, bounded concurrency, and explicit exit codes.
+- 📦 **Ecosystem coverage**: npm + Python lockfile support.
 
-- Free and redistributable vulnerability workflow.
-- Local-first architecture with SQLite caching.
-- Reliable ingestion with retry, rate limiting, and incremental sync.
-- Practical risk context: KEV exploitation signal and EPSS probability.
-- CI-oriented policy controls with deterministic exit behavior.
+> [!TIP]
+> Use `--no-network --strict-cache` for deterministic offline runs in restricted CI environments.
 
-> [!NOTE]
-> VulnScanner is intentionally modular. Today it ships a hardened data foundation and dependency scanning workflow; container, SBOM, and active scanning are planned next.
+---
 
-## Current Feature Set
+## 🧭 Table of Contents
 
-### Implemented commands
+- [🧩 Feature Set](#-feature-set)
+- [🏗️ Architecture](#️-architecture)
+- [📡 Data Sources](#-data-sources)
+- [🚀 Quick Start](#-quick-start)
+- [🛠️ Command Reference](#️-command-reference)
+- [📏 Policy & Reporting](#-policy--reporting)
+- [🔢 Exit Codes](#-exit-codes)
+- [⚙️ Configuration](#️-configuration)
+- [🗄️ Database Model](#️-database-model)
+- [🧪 CI/CD Example](#-cicd-example)
+- [🛣️ Roadmap](#️-roadmap)
+- [🤝 Contributing](#-contributing)
+- [📄 License](#-license)
+
+---
+
+## 🧩 Feature Set
+
+### ✅ Implemented Commands
 
 - `vulnscanner nvd-sync`
 - `vulnscanner kev-sync`
@@ -49,49 +56,63 @@ VulnScanner ingests and normalizes public vulnerability data into a local SQLite
 - `vulnscanner cache stats`
 - `vulnscanner cache clear`
 
-### What each command does
+### 🧠 What They Do
 
-- `nvd-sync`: Incremental CVE ingestion from NVD with time-window chunking, retries, and API-key-aware rate limits.
-- `kev-sync`: Imports CISA Known Exploited Vulnerabilities and marks matching local CVEs.
-- `epss-sync`: Imports EPSS score feed and enriches local CVEs with `epss_score` and `epss_percentile`.
-- `scan-deps`: Scans `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `poetry.lock`, `uv.lock`, `Pipfile.lock`, or `requirements.txt` through OSV, enriches findings with local CVE/KEV/EPSS context, and enforces CI policy gates.
-- `state show`: Displays current sync checkpoint metadata (`nvd_last_mod`, `kev_last_sync`, `epss_last_sync`).
-- `state reset`: Clears selected or all sync checkpoint metadata.
-- `cache stats`: Shows local cache/table entry counts.
-- `cache clear`: Clears selected cache targets with enrichment consistency updates.
+- `nvd-sync`: Incremental NVD CVE ingestion with rate-limit aware retries.
+- `kev-sync`: Imports CISA KEV and marks matched CVEs as known exploited.
+- `epss-sync`: Imports EPSS and enriches CVEs with score + percentile.
+- `scan-deps`: Scans dependency manifests, enriches findings, renders reports, and enforces policy.
+- `state show/reset`: Inspect or reset sync checkpoint metadata.
+- `cache stats/clear`: Inspect or clear cache tables with enrichment consistency updates.
 
-## Architecture
+### 📦 Supported Dependency Manifests
+
+- `package-lock.json`
+- `yarn.lock`
+- `pnpm-lock.yaml`
+- `poetry.lock`
+- `uv.lock`
+- `Pipfile.lock` (exact lock pins: `==version` or `===version`)
+- `requirements.txt` (exact pins: `pkg==version`; extras/markers/hash suffixes supported)
+
+---
+
+## 🏗️ Architecture
 
 ```mermaid
 flowchart LR
-    A[Dependency manifests\npackage-lock.json\nyarn.lock\npnpm-lock.yaml\npoetry.lock\nuv.lock\nPipfile.lock\nrequirements.txt] --> B[scan-deps]
+    A[Manifests\npackage-lock.json\nyarn.lock\npnpm-lock.yaml\npoetry.lock\nuv.lock\nPipfile.lock\nrequirements.txt] --> B[scan-deps]
     B --> C[OSV API]
     B --> D[(SQLite cache)]
 
     E[nvd-sync] --> F[NVD API]
     E --> D
 
-    G[kev-sync] --> H[CISA KEV feed]
+    G[kev-sync] --> H[CISA KEV]
     G --> D
 
-    I[epss-sync] --> J[EPSS feed]
+    I[epss-sync] --> J[EPSS]
     I --> D
 
-    D --> K[Policy engine\nseverity / KEV / EPSS]
-    K --> L[Console output\nJSON / CSV / Markdown / SARIF]
-    K --> M[CI exit code]
+    D --> K[Policy Engine\nseverity / KEV / EPSS / baseline]
+    K --> L[Output\nTable / JSON / CSV / Markdown / SARIF]
+    K --> M[CI Exit Code]
 ```
 
-## Data Sources
+---
+
+## 📡 Data Sources
 
 | Source | Purpose | URL |
 | --- | --- | --- |
 | NVD API | Canonical CVE ingestion | `https://services.nvd.nist.gov/rest/json/cves/2.0` |
 | CISA KEV | Known exploited CVEs | `https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json` |
-| EPSS CSV | Exploit likelihood scoring | `https://epss.empiricalsecurity.com/epss_scores-current.csv.gz` |
-| OSV API | Package vulnerability resolution | `https://api.osv.dev/v1/querybatch` |
+| EPSS CSV | Exploit likelihood scores | `https://epss.empiricalsecurity.com/epss_scores-current.csv.gz` |
+| OSV API | Package vulnerability mapping | `https://api.osv.dev/v1/querybatch` |
 
-## Quick Start
+---
+
+## 🚀 Quick Start
 
 ### 1) Install
 
@@ -103,13 +124,13 @@ source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -e .
 ```
 
-### 2) Optional NVD API key
+### 2) (Optional) Set NVD API Key
 
 ```bash
 export NVD_API_KEY="your-nvd-api-key"
 ```
 
-### 3) Sync vulnerability intelligence
+### 3) Sync Intel
 
 ```bash
 vulnscanner nvd-sync --since "2024-08-01T00:00:00Z"
@@ -117,17 +138,17 @@ vulnscanner kev-sync
 vulnscanner epss-sync
 ```
 
-### 4) Scan dependencies with policy
+### 4) Run Scan + Policy
 
 ```bash
 vulnscanner scan-deps package-lock.json --policy strict
 ```
 
-## Command Reference
+---
+
+## 🛠️ Command Reference
 
 ### `vulnscanner nvd-sync`
-
-Sync CVE data from NVD.
 
 ```bash
 vulnscanner nvd-sync --since "2024-08-01T00:00:00Z" --until "2024-08-02T00:00:00Z"
@@ -135,13 +156,11 @@ vulnscanner nvd-sync --since 7d --until now
 ```
 
 Options:
-- `--since`: ISO8601 timestamp with timezone, or relative value (`7d`, `12h`, `today`, `yesterday`, `now`).
-- `--until`: ISO8601 timestamp with timezone, or relative value (`7d`, `12h`, `today`, `yesterday`, `now`).
-- `--debug`: raises full traceback for diagnostics.
+- `--since`: ISO8601 with timezone, or relative values (`7d`, `12h`, `today`, `yesterday`, `now`)
+- `--until`: ISO8601 with timezone, or relative values (`7d`, `12h`, `today`, `yesterday`, `now`)
+- `--debug`
 
 ### `vulnscanner kev-sync`
-
-Sync CISA KEV feed and enrich local CVEs.
 
 ```bash
 vulnscanner kev-sync
@@ -149,11 +168,9 @@ vulnscanner kev-sync --force
 ```
 
 Options:
-- `--force`: bypass TTL and refresh now.
+- `--force`
 
 ### `vulnscanner epss-sync`
-
-Sync EPSS feed and enrich local CVEs.
 
 ```bash
 vulnscanner epss-sync
@@ -161,11 +178,9 @@ vulnscanner epss-sync --force
 ```
 
 Options:
-- `--force`: bypass TTL and refresh now.
+- `--force`
 
 ### `vulnscanner state show`
-
-Display sync checkpoint state.
 
 ```bash
 vulnscanner state show
@@ -177,8 +192,6 @@ Options:
 
 ### `vulnscanner state reset`
 
-Reset sync checkpoint state.
-
 ```bash
 vulnscanner state reset
 vulnscanner state reset --key nvd_last_mod
@@ -187,56 +200,7 @@ vulnscanner state reset --key nvd_last_mod
 Options:
 - `--key [nvd_last_mod|kev_last_sync|epss_last_sync]` (repeatable; omit to reset all)
 
-### `vulnscanner scan-deps`
-
-Scan dependencies and apply policy.
-
-```bash
-vulnscanner scan-deps package-lock.json
-vulnscanner scan-deps requirements.txt --format json --output reports/deps.json
-vulnscanner scan-deps Pipfile.lock --format sarif --output reports/deps.sarif
-vulnscanner scan-deps poetry.lock --no-network
-vulnscanner scan-deps poetry.lock --no-network --strict-cache
-vulnscanner scan-deps package-lock.json --sort-by epss --top 10
-vulnscanner scan-deps package-lock.json --summary-only
-vulnscanner scan-deps package-lock.json --baseline reports/prev.json --new-only
-vulnscanner scan-deps package-lock.json --save-baseline reports/new-baseline.json
-vulnscanner scan-deps package-lock.json --baseline reports/prev.json --fail-on high --fail-on-new-only
-```
-
-Supported manifests:
-- `package-lock.json`
-- `yarn.lock`
-- `pnpm-lock.yaml`
-- `poetry.lock`
-- `uv.lock`
-- `Pipfile.lock` (exact lock entries: `==version` or `===version`)
-- `requirements.txt` (exact pins: `pkg==version`; extras/markers/hash suffixes supported)
-
-Options:
-- `--format [table|json|csv|markdown|sarif]`
-- `--output FILE`
-- `--top N` (table/markdown rows limit; default `20`)
-- `--summary-only` (table/markdown summary only)
-- `--sort-by [severity|epss|package|id]` (table/markdown row ordering)
-- `--baseline FILE` (JSON output from a previous scan for diffing)
-- `--save-baseline FILE` (writes current filtered findings to JSON baseline)
-- `--new-only` (requires `--baseline`; only keep findings not in baseline)
-- `--fail-on-new-only` (requires `--baseline`; evaluates fail gates on new findings only)
-- `--min-severity [low|medium|high|critical]`
-- `--kev-only`
-- `--epss-min 0.0..1.0`
-- `--fail-on [low|medium|high|critical]`
-- `--fail-on-kev`
-- `--fail-on-epss 0.0..1.0`
-- `--policy [none|balanced|strict]`
-- `--no-network` (cache-only mode; skips live OSV API lookups)
-- `--strict-cache` (requires `--no-network`; fails if cache misses are detected)
-- `--debug`
-
 ### `vulnscanner cache stats`
-
-Show cache and table sizes.
 
 ```bash
 vulnscanner cache stats
@@ -248,8 +212,6 @@ Options:
 
 ### `vulnscanner cache clear`
 
-Clear selected cache targets.
-
 ```bash
 vulnscanner cache clear
 vulnscanner cache clear --target kev --target epss
@@ -257,61 +219,83 @@ vulnscanner cache clear --all
 ```
 
 Options:
-- `--target [osv|osv-vuln|kev|epss]` (repeatable; default clears `osv` + `osv-vuln`)
-- `--all` (clears all cache targets)
+- `--target [osv|osv-vuln|kev|epss]` (repeatable; default: `osv` + `osv-vuln`)
+- `--all`
 
-## Policy and Reporting
-
-### Policy presets
-
-- `none`: no preset behavior.
-- `balanced`: default fail gates if not explicitly set:
-  - severity `critical`
-  - EPSS `>= 0.9`
-- `strict`: default fail gates if not explicitly set:
-  - severity `high`
-  - EPSS `>= 0.7`
-
-### Real-world policy examples
+### `vulnscanner scan-deps`
 
 ```bash
-# Fail on high+ findings
+vulnscanner scan-deps package-lock.json
+vulnscanner scan-deps requirements.txt --format json --output reports/deps.json
+vulnscanner scan-deps Pipfile.lock --format sarif --output reports/deps.sarif
+vulnscanner scan-deps poetry.lock --no-network --strict-cache
+vulnscanner scan-deps package-lock.json --sort-by epss --top 10
+vulnscanner scan-deps package-lock.json --baseline reports/prev.json --new-only
+vulnscanner scan-deps package-lock.json --baseline reports/prev.json --fail-on high --fail-on-new-only
+vulnscanner scan-deps package-lock.json --save-baseline reports/new-baseline.json
+```
+
+Options:
+- `--format [table|json|csv|markdown|sarif]`
+- `--output FILE`
+- `--top N`
+- `--summary-only`
+- `--sort-by [severity|epss|package|id]`
+- `--baseline FILE`
+- `--save-baseline FILE`
+- `--new-only` (requires `--baseline`)
+- `--fail-on-new-only` (requires `--baseline`)
+- `--min-severity [low|medium|high|critical]`
+- `--kev-only`
+- `--epss-min 0.0..1.0`
+- `--fail-on [low|medium|high|critical]`
+- `--fail-on-kev`
+- `--fail-on-epss 0.0..1.0`
+- `--policy [none|balanced|strict]`
+- `--no-network`
+- `--strict-cache` (requires `--no-network`)
+- `--debug`
+
+---
+
+## 📏 Policy & Reporting
+
+### 🎯 Policy Presets
+
+- `none`: no defaults
+- `balanced`: `severity>=critical`, `epss>=0.9` (unless explicitly overridden)
+- `strict`: `severity>=high`, `epss>=0.7` (unless explicitly overridden)
+
+### 💡 Practical Workflows
+
+```bash
+# Fail on high+
 vulnscanner scan-deps package-lock.json --fail-on high
 
-# Only review likely-exploitable set
+# Prioritize likely exploitable issues
 vulnscanner scan-deps package-lock.json --min-severity high --kev-only --epss-min 0.5
 
-# Hard fail for exploited or high EPSS findings
-vulnscanner scan-deps package-lock.json --fail-on-kev --fail-on-epss 0.7
-
-# CI baseline
-vulnscanner scan-deps package-lock.json --policy strict
-
-# Deterministic offline run using only cached results
-vulnscanner scan-deps poetry.lock --no-network
-
-# Deterministic offline hard gate (fail on cache misses)
+# Offline deterministic gate
 vulnscanner scan-deps poetry.lock --no-network --strict-cache
 
-# Risk-first triage view
-vulnscanner scan-deps package-lock.json --sort-by epss --top 10
-
-# Dashboard-only summary for pipelines
-vulnscanner scan-deps package-lock.json --summary-only
-
-# PR-focused diff gate (new findings only)
+# PR diff gate: only new findings
 vulnscanner scan-deps package-lock.json --baseline reports/prev.json --new-only
 
-# Refresh baseline snapshot for next comparison
-vulnscanner scan-deps package-lock.json --save-baseline reports/new-baseline.json
-
-# Keep full report, but gate only on newly introduced high+ findings
+# Keep full output, gate only on new high+
 vulnscanner scan-deps package-lock.json --baseline reports/prev.json --fail-on high --fail-on-new-only
 ```
 
-### Exit codes
+### 📤 Output Formats
 
-`vulnscanner` uses stable non-zero exit codes for CI:
+- `table`: terminal-readable summary
+- `json`: automation-friendly structured data
+- `csv`: spreadsheet / BI export
+- `markdown`: PR-ready report output
+- `sarif`: GitHub code scanning / security tooling
+
+---
+
+## 🔢 Exit Codes
 
 | Code | Meaning |
 | ---: | --- |
@@ -320,55 +304,46 @@ vulnscanner scan-deps package-lock.json --baseline reports/prev.json --fail-on h
 | `12` | Feed sync failure (`nvd-sync`, `kev-sync`, `epss-sync`) |
 | `13` | Dependency scan execution failure |
 
-### Output formats
+---
 
-- `table`: human-readable terminal summary.
-- `json`: structured machine output for automation.
-- `csv`: spreadsheet and BI-friendly export.
-- `markdown`: audit-ready report for PR comments and docs.
-- `sarif`: static-analysis exchange format for GitHub code scanning and security tooling.
-
-## Configuration
-
-Environment variables:
+## ⚙️ Configuration
 
 | Variable | Default | Description |
 | --- | --- | --- |
 | `VULNSCANNER_DB` | `vulnscanner.db` | SQLite database path |
 | `NVD_API_KEY` | unset | Enables higher NVD request quota |
-| `NVD_MAX_PER_30S` | `5` or `50` with key | NVD request budget per 30s |
+| `NVD_MAX_PER_30S` | `5` or `50` with key | NVD requests per 30 seconds |
 | `NVD_MAX_DAYS_PER_REQUEST` | `3` | NVD chunk window in days |
 | `OSV_TTL_HOURS` | `12` | OSV cache TTL |
-| `OSV_HTTP_TIMEOUT_SECONDS` | `60` | Timeout for OSV HTTP requests |
-| `OSV_HTTP_RETRIES` | `3` | Retry attempts for transient OSV API errors |
-| `OSV_VULN_DETAIL_CONCURRENCY` | `20` | Max concurrent OSV vulnerability detail lookups |
+| `OSV_HTTP_TIMEOUT_SECONDS` | `60` | OSV HTTP timeout |
+| `OSV_HTTP_RETRIES` | `3` | OSV transient retry attempts |
+| `OSV_VULN_DETAIL_CONCURRENCY` | `20` | OSV detail lookup concurrency |
 | `KEV_TTL_HOURS` | `24` | KEV sync TTL |
 | `EPSS_TTL_HOURS` | `720` | EPSS sync TTL |
-| `VULNSCANNER_UA` | project UA | User-Agent for upstream API calls |
+| `VULNSCANNER_UA` | project UA | Upstream User-Agent |
 
-> [!TIP]
-> Keep feed sync commands on a schedule (for example daily), then run `scan-deps` per commit/PR.
+---
 
-## Database Model
+## 🗄️ Database Model
 
 Core tables:
 
-- `cves`: canonical vulnerability records plus enrichment fields (`is_known_exploited`, `epss_score`, `epss_percentile`).
-- `meta`: operational sync state (`nvd_last_mod`, `kev_last_sync`, `epss_last_sync`).
-- `osv_cache`: package/version OSV query cache.
-- `osv_vuln_cache`: OSV vulnerability detail cache.
-- `kev`: raw KEV records.
-- `epss`: raw EPSS score records.
+- `cves`: canonical CVE records + enrichment (`is_known_exploited`, `epss_score`, `epss_percentile`)
+- `meta`: sync state (`nvd_last_mod`, `kev_last_sync`, `epss_last_sync`)
+- `osv_cache`: package/version OSV query cache
+- `osv_vuln_cache`: OSV vulnerability detail cache
+- `kev`: KEV feed records
+- `epss`: EPSS feed records
 
-SQLite is configured with:
+SQLite settings:
 
 - WAL mode
 - foreign keys enabled
-- indexes on CVE source and modified timestamp
+- indexes on CVE source + modified timestamp
 
-## CI/CD Integration
+---
 
-Minimal GitHub Actions example:
+## 🧪 CI/CD Example
 
 ```yaml
 name: Dependency Risk Gate
@@ -394,25 +369,27 @@ jobs:
         run: vulnscanner scan-deps package-lock.json --policy strict
 ```
 
-## Roadmap
+---
 
-### Completed
+## 🛣️ Roadmap
 
-- NVD ingestion with incremental sync and resilience controls.
-- KEV sync and CVE exploitation flagging.
-- EPSS sync and CVE scoring enrichment.
-- Dependency scanning with policy gates and multiple report formats.
+### ✅ Completed
 
-### Next
+- NVD incremental sync + resilience controls
+- KEV sync and exploited CVE enrichment
+- EPSS sync and score enrichment
+- Policy-driven dependency scanning and multi-format reporting
 
-- Container and filesystem scanning integration (`scan-image`).
-- SBOM ingestion and analysis (`scan-sbom`).
-- Rich HTML reporting and governance workflows.
-- Optional self-hosted intelligence integrations.
+### ⏭️ Next
 
-## Contributing
+- Container/filesystem scanning (`scan-image`)
+- SBOM ingestion and analysis (`scan-sbom`)
+- Rich HTML governance reporting
+- Optional self-hosted intelligence integrations
 
-Contributions are welcome.
+---
+
+## 🤝 Contributing
 
 ```bash
 git clone https://github.com/therayyanawaz/VulnScanner.git
@@ -423,13 +400,15 @@ pip install -e ".[dev]"
 pytest -q
 ```
 
-Suggested contribution areas:
+Great contribution targets:
 
-- parser support for additional dependency ecosystems
-- scanner adapters (containers, SBOM, IaC)
-- report UX and policy rule extensions
-- performance and storage optimizations
+- parser support for additional ecosystems
+- scanner adapters (container, SBOM, IaC)
+- policy/report UX enhancements
+- storage and performance optimization
 
-## License
+---
+
+## 📄 License
 
 MIT. See [LICENSE](LICENSE).
