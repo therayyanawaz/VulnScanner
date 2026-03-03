@@ -12,6 +12,7 @@ __all__ = [
     "db",
     "nvd",
     "kev",
+    "epss",
     "caching",
     "osv",
 ]

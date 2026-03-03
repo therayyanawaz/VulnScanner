@@ -8,6 +8,7 @@ from vulnscanner.osv import (
     ScanFinding,
     ScanResult,
     _derive_npm_name_from_path,
+    _extract_cve_ids,
     _extract_severity,
     parse_dependency_manifest,
     should_fail,
@@ -72,6 +73,11 @@ def test_extract_severity_prefers_highest() -> None:
     assert _extract_severity(vuln) == "critical"
 
 
+def test_extract_cve_ids_from_vuln_and_aliases() -> None:
+    cves = _extract_cve_ids("GHSA-xxxx-yyyy", ["CVE-2024-0001", "cve-2024-0002", "CVE-2024-0001"])
+    assert cves == ["CVE-2024-0001", "CVE-2024-0002"]
+
+
 def test_should_fail_threshold_logic() -> None:
     result = ScanResult(
         dependencies_total=1,
@@ -91,3 +97,36 @@ def test_should_fail_threshold_logic() -> None:
     )
     assert should_fail(result, "high") is True
     assert should_fail(result, "critical") is False
+
+
+def test_scan_result_enrichment_counters() -> None:
+    result = ScanResult(
+        dependencies_total=1,
+        cache_hits=0,
+        cache_misses=1,
+        findings=(
+            ScanFinding(
+                vuln_id="OSV-1",
+                package="demo",
+                ecosystem="npm",
+                version="1.0.0",
+                severity="high",
+                aliases=(),
+                summary="",
+                cve_id="CVE-2024-0001",
+                is_known_exploited=True,
+                epss_score=0.45,
+            ),
+            ScanFinding(
+                vuln_id="OSV-2",
+                package="demo",
+                ecosystem="npm",
+                version="1.0.0",
+                severity="low",
+                aliases=(),
+                summary="",
+            ),
+        ),
+    )
+    assert result.known_exploited_findings == 1
+    assert result.epss_enriched_findings == 1

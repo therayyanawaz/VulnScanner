@@ -9,6 +9,7 @@ from typing import Optional
 import click
 
 from .db import ensure_database
+from .epss import sync_epss
 from .kev import sync_kev
 from .nvd import sync_nvd_delta
 from .osv import ScanResult, scan_dependency_manifest, should_fail
@@ -116,6 +117,24 @@ def kev_sync(force: bool) -> None:
     )
 
 
+@main.command("epss-sync")
+@click.option("--force", is_flag=True, help="Bypass TTL and refresh EPSS feed now")
+def epss_sync(force: bool) -> None:
+    ensure_database()
+    try:
+        stats = sync_epss(force=force)
+    except Exception as exc:
+        raise click.ClickException(f"EPSS sync failed: {exc}") from exc
+
+    if bool(stats["skipped"]):
+        click.echo("✅ EPSS sync skipped: cache is still fresh")
+        return
+    click.echo(
+        "✅ EPSS sync complete: "
+        f"{stats['epss_records']} EPSS records, {stats['matched_cves']} CVEs enriched"
+    )
+
+
 def _render_scan_result(result: ScanResult, output_format: str) -> str:
     if output_format == "json":
         return json.dumps(result.as_dict(), indent=2)
@@ -124,6 +143,8 @@ def _render_scan_result(result: ScanResult, output_format: str) -> str:
         f"Cache hits: {result.cache_hits}",
         f"Cache misses: {result.cache_misses}",
         f"Findings: {len(result.findings)}",
+        f"Known exploited findings: {result.known_exploited_findings}",
+        f"EPSS-enriched findings: {result.epss_enriched_findings}",
     ]
     counts = result.severity_counts
     lines.append(
@@ -135,9 +156,17 @@ def _render_scan_result(result: ScanResult, output_format: str) -> str:
         lines.append("")
         lines.append("Top findings:")
         for finding in result.findings[:20]:
+            extras: list[str] = []
+            if finding.cve_id:
+                extras.append(f"CVE={finding.cve_id}")
+            if finding.is_known_exploited:
+                extras.append("KEV=yes")
+            if finding.epss_score is not None:
+                extras.append(f"EPSS={finding.epss_score:.5f}")
+            suffix = f" [{', '.join(extras)}]" if extras else ""
             lines.append(
                 f"- [{finding.severity}] {finding.vuln_id} "
-                f"{finding.package}@{finding.version} ({finding.ecosystem})"
+                f"{finding.package}@{finding.version} ({finding.ecosystem}){suffix}"
             )
     return "\n".join(lines)
 

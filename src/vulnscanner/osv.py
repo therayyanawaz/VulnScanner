@@ -11,6 +11,7 @@ import httpx
 
 from .caching import cache_osv_result, cache_osv_vuln, get_cached_osv, get_cached_osv_vuln
 from .config import settings
+from .db import db
 
 OSV_BATCH_URL = "https://api.osv.dev/v1/querybatch"
 OSV_VULN_URL = "https://api.osv.dev/v1/vulns/{vuln_id}"
@@ -37,6 +38,10 @@ class ScanFinding:
     severity: str
     aliases: tuple[str, ...]
     summary: str
+    cve_id: str | None = None
+    is_known_exploited: bool | None = None
+    epss_score: float | None = None
+    epss_percentile: float | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -47,6 +52,10 @@ class ScanFinding:
             "severity": self.severity,
             "aliases": list(self.aliases),
             "summary": self.summary,
+            "cve_id": self.cve_id,
+            "is_known_exploited": self.is_known_exploited,
+            "epss_score": self.epss_score,
+            "epss_percentile": self.epss_percentile,
         }
 
 
@@ -65,6 +74,14 @@ class ScanResult:
             counts[sev] += 1
         return counts
 
+    @property
+    def known_exploited_findings(self) -> int:
+        return sum(1 for finding in self.findings if finding.is_known_exploited is True)
+
+    @property
+    def epss_enriched_findings(self) -> int:
+        return sum(1 for finding in self.findings if finding.epss_score is not None)
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "dependencies_total": self.dependencies_total,
@@ -72,6 +89,8 @@ class ScanResult:
             "cache_misses": self.cache_misses,
             "findings_total": len(self.findings),
             "severity_counts": self.severity_counts,
+            "known_exploited_findings": self.known_exploited_findings,
+            "epss_enriched_findings": self.epss_enriched_findings,
             "findings": [finding.as_dict() for finding in self.findings],
         }
 
@@ -129,23 +148,42 @@ async def scan_dependency_manifest(path: str | Path) -> ScanResult:
 
     vuln_details = await _load_vulnerability_details(cached_payloads)
 
-    findings: list[ScanFinding] = []
+    raw_entries: list[tuple[Dependency, str, dict[str, Any], list[str]]] = []
+    all_cve_ids: set[str] = set()
     for dep in dependencies:
         result = cached_payloads.get(dep.cache_key, {"vulns": []})
         for vuln in result.get("vulns", []):
             vuln_id = str(vuln.get("id", "unknown"))
             detailed = vuln_details.get(vuln_id) or vuln
-            findings.append(
-                ScanFinding(
-                    vuln_id=vuln_id,
-                    package=dep.name,
-                    ecosystem=dep.ecosystem,
-                    version=dep.version,
-                    severity=_extract_severity(detailed),
-                    aliases=tuple(str(a) for a in detailed.get("aliases", []) if isinstance(a, str)),
-                    summary=str(detailed.get("summary", "") or ""),
-                )
+            cve_ids = _extract_cve_ids(vuln_id, detailed.get("aliases"))
+            all_cve_ids.update(cve_ids)
+            raw_entries.append((dep, vuln_id, detailed, cve_ids))
+
+    cve_enrichment = _load_cve_enrichment(all_cve_ids)
+    findings: list[ScanFinding] = []
+    for dep, vuln_id, detailed, cve_ids in raw_entries:
+        enrichment = next((cve_enrichment[cve] for cve in cve_ids if cve in cve_enrichment), None)
+        primary_cve = cve_ids[0] if cve_ids else None
+        is_known_exploited: bool | None = None
+        epss_score: float | None = None
+        epss_percentile: float | None = None
+        if enrichment is not None:
+            is_known_exploited, epss_score, epss_percentile = enrichment
+        findings.append(
+            ScanFinding(
+                vuln_id=vuln_id,
+                package=dep.name,
+                ecosystem=dep.ecosystem,
+                version=dep.version,
+                severity=_extract_severity(detailed),
+                aliases=tuple(str(a) for a in detailed.get("aliases", []) if isinstance(a, str)),
+                summary=str(detailed.get("summary", "") or ""),
+                cve_id=primary_cve,
+                is_known_exploited=is_known_exploited,
+                epss_score=epss_score,
+                epss_percentile=epss_percentile,
             )
+        )
 
     findings.sort(key=lambda item: SEVERITY_ORDER.get(item.severity, 0), reverse=True)
     return ScanResult(
@@ -173,6 +211,43 @@ def _normalize_query_result(result: dict[str, Any] | Any) -> dict[str, Any]:
     if not isinstance(vulns, list):
         return {"vulns": []}
     return {"vulns": vulns}
+
+
+def _extract_cve_ids(vuln_id: str, aliases: Any) -> list[str]:
+    raw_values: list[Any] = [vuln_id]
+    if isinstance(aliases, list):
+        raw_values.extend(aliases)
+    cves: list[str] = []
+    seen: set[str] = set()
+    for value in raw_values:
+        if not isinstance(value, str):
+            continue
+        candidate = value.strip().upper()
+        if not candidate.startswith("CVE-"):
+            continue
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        cves.append(candidate)
+    return cves
+
+
+def _load_cve_enrichment(cve_ids: set[str]) -> dict[str, tuple[bool, float | None, float | None]]:
+    if not cve_ids:
+        return {}
+    ordered = sorted(cve_ids)
+    placeholders = ",".join("?" for _ in ordered)
+    query = f"""
+        SELECT cve_id, is_known_exploited, epss_score, epss_percentile
+        FROM cves
+        WHERE cve_id IN ({placeholders})
+    """
+    with db() as conn:
+        rows = conn.execute(query, ordered).fetchall()
+    return {
+        str(cve_id): (bool(is_known_exploited), epss_score, epss_percentile)
+        for cve_id, is_known_exploited, epss_score, epss_percentile in rows
+    }
 
 
 async def _load_vulnerability_details(

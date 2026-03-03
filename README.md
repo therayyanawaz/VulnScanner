@@ -44,9 +44,9 @@ This project combines **free public datasets**, **open-source scanning tools**, 
 * ✅ **Retry/backoff logic** with exponential delays for resilience
 * ✅ **CLI interface** for running syncs and managing data
 * ✅ **Environment-based configuration** for API keys and settings
-* 🔄 OSV API integration (cache layer ready)
-* 🔄 CISA KEV enrichment (schema ready)
-* 🔄 EPSS scoring integration (schema ready)
+* ✅ OSV API integration with dependency scanning (`scan-deps`)
+* ✅ CISA KEV enrichment sync (`kev-sync`)
+* ✅ EPSS scoring sync (`epss-sync`)
 
 **Quick Start:**
 ```bash
@@ -76,7 +76,7 @@ vulnscanner nvd-sync --since "2024-08-01T00:00:00Z"
 ### 🔄 **Phase 1: MVP Dependency Scanning (In Progress)**
 
 * Use `osv-scanner` to detect vulnerable dependencies
-* Enrich output with NVD (CVSS/CPE/CWE), KEV (exploited), and EPSS (likelihood)
+* Enrich output with KEV (exploited) and EPSS (likelihood) when local CVE data is synced
 * CLI outputs JSON/Markdown reports
 
 ### 🔄 **Phase 1.5: CI/CD Integration + Caching**
@@ -352,11 +352,15 @@ vulnscanner scan-deps requirements.txt --format json --output reports/deps.json
 # Sync CISA KEV feed and mark exploited CVEs in local DB
 vulnscanner kev-sync
 
+# Sync EPSS scores and enrich local CVE records
+vulnscanner epss-sync
+
 # Help
 vulnscanner --help
 vulnscanner nvd-sync --help
 vulnscanner scan-deps --help
 vulnscanner kev-sync --help
+vulnscanner epss-sync --help
 ```
 
 ### Future Phases (Coming Soon)
@@ -406,7 +410,7 @@ jobs:
 * **[OSV API](https://osv.dev)** - Open Source Vulnerabilities database ([Documentation](https://google.github.io/osv.dev/api/))
 * **[NVD API](https://nvd.nist.gov/developers/start-here)** - National Vulnerability Database ([Get API Key](https://nvd.nist.gov/developers/request-an-api-key))
 * **[CISA KEV](https://github.com/cisagov/kev-data)** - Known Exploited Vulnerabilities ([JSON Feed](https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json))
-* **[EPSS API](https://www.first.org/epss/api/)** - Exploit Prediction Scoring System ([CSV Download](https://epss.cyentia.com/epss_scores-current.csv.gz))
+* **[EPSS API](https://www.first.org/epss/api/)** - Exploit Prediction Scoring System ([CSV Download](https://epss.empiricalsecurity.com/epss_scores-current.csv.gz))
 
 ### Self-Hosted Solutions  
 * **[cve-search](https://github.com/cve-search/cve-search)** - Local CVE search engine with MongoDB backend
@@ -442,7 +446,7 @@ All tooling and data referenced here are open source and fall under their respec
 ### 🔄 In Progress (Phase 1)
 - [x] OSV API client for package vulnerability lookups
 - [x] CISA KEV enrichment integration (`kev-sync`)
-- [ ] EPSS scoring integration
+- [x] EPSS scoring integration (`epss-sync`)
 - [x] Basic dependency scanning workflow (`scan-deps`)
 
 ### 📋 Planned (Phase 2+)
