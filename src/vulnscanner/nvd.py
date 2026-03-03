@@ -1,18 +1,19 @@
 from __future__ import annotations
 
 import asyncio
-import math
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
 import httpx
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity import before_sleep_log, retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from .config import settings
 from .db import db, get_meta, set_meta
 
 NVD_BASE = "https://services.nvd.nist.gov/rest/json/cves/2.0"
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -65,17 +66,15 @@ class NvdClient:
         retry=retry_if_exception_type((httpx.HTTPError,)),
         wait=wait_exponential(multiplier=2, min=5, max=120),  # More conservative for rate limits
         stop=stop_after_attempt(5),
-        retry_error_callback=lambda retry_state: print(
-            f"⚠️ Retrying NVD request (attempt {retry_state.attempt_number}): {retry_state.outcome.exception()}"
-        ),
+        before_sleep=before_sleep_log(LOGGER, logging.WARNING),
     )
     async def fetch_page(
         self, start: datetime, end: datetime, start_index: int = 0
     ) -> dict[str, Any]:
         await self.rate_limiter.wait()
         params = {
-            "lastModStartDate": start.replace(tzinfo=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"),
-            "lastModEndDate": end.replace(tzinfo=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"),
+            "lastModStartDate": _format_nvd_datetime(start),
+            "lastModEndDate": _format_nvd_datetime(end),
             "startIndex": str(start_index),
             "resultsPerPage": "2000",
         }
@@ -85,8 +84,9 @@ class NvdClient:
             return {"totalResults": 0, "resultsPerPage": 0, "vulnerabilities": []}
         elif resp.status_code == 429:
             # Rate limited - add extra delay before raising
-            print(f"⚠️ Rate limited by NVD API. Waiting extra 30 seconds...")
-            await asyncio.sleep(30)
+            sleep_for = _retry_after_seconds(resp.headers.get("Retry-After"), default_seconds=30)
+            LOGGER.warning("Rate limited by NVD API. Waiting %s seconds before retry.", sleep_for)
+            await asyncio.sleep(sleep_for)
         resp.raise_for_status()
         return resp.json()
 
@@ -161,7 +161,11 @@ def _normalize_iso8601(value: str) -> str:
         dt = datetime.fromisoformat(value)
     except Exception:
         return value
-    return dt.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    return dt.isoformat().replace("+00:00", "Z")
 
 
 def _json_dumps(data: Any) -> str:
@@ -175,10 +179,37 @@ def _get_last_mod_time() -> datetime | None:
     if not raw:
         return None
     try:
-        return datetime.fromisoformat(raw)
+        if raw.endswith("Z"):
+            raw = raw[:-1] + "+00:00"
+        dt = datetime.fromisoformat(raw)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
     except Exception:
         return None
 
 
 def _set_last_mod_time(dt: datetime) -> None:
-    set_meta("nvd_last_mod", dt.replace(tzinfo=timezone.utc).isoformat())
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    set_meta("nvd_last_mod", dt.isoformat())
+
+
+def _retry_after_seconds(value: str | None, default_seconds: int) -> int:
+    if value is None:
+        return default_seconds
+    try:
+        seconds = int(value)
+        return seconds if seconds > 0 else default_seconds
+    except ValueError:
+        return default_seconds
+
+
+def _format_nvd_datetime(dt: datetime) -> str:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    return dt.strftime("%Y-%m-%dT%H:%M:%S")
