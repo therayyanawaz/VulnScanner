@@ -33,6 +33,9 @@ class Settings:
     nvd_max_days_per_request: int = _env_int("NVD_MAX_DAYS_PER_REQUEST", 3)
     # Cache TTLs
     osv_ttl_hours: int = _env_int("OSV_TTL_HOURS", 12)
+    osv_http_timeout_seconds: int = _env_int("OSV_HTTP_TIMEOUT_SECONDS", 60)
+    osv_http_retries: int = _env_int("OSV_HTTP_RETRIES", 3)
+    osv_vuln_detail_concurrency: int = _env_int("OSV_VULN_DETAIL_CONCURRENCY", 20)
     kev_ttl_hours: int = _env_int("KEV_TTL_HOURS", 24)
     epss_ttl_hours: int = _env_int("EPSS_TTL_HOURS", 720)
 

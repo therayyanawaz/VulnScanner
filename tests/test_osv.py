@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+import vulnscanner.osv as osv
 from vulnscanner.osv import (
     Dependency,
     ScanFinding,
@@ -243,3 +246,100 @@ def test_policy_failures_combined() -> None:
     )
     failures = policy_failures(result, severity_threshold="medium", fail_on_kev=True, fail_on_epss=0.5)
     assert failures == ["severity>=medium", "known_exploited", "epss>=0.5"]
+
+
+class _FakeResponse:
+    def __init__(
+        self,
+        status_code: int,
+        payload: dict[str, object] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        self.status_code = status_code
+        self._payload = payload or {}
+        self.headers = headers or {}
+
+    def json(self) -> dict[str, object]:
+        return self._payload
+
+    def raise_for_status(self) -> None:
+        if self.status_code < 400:
+            return
+        raise RuntimeError(f"status={self.status_code}")
+
+
+class _FakeBatchClient:
+    def __init__(self, responses: list[_FakeResponse]) -> None:
+        self._responses = responses
+        self.calls = 0
+
+    async def post(self, _url: str, json: dict[str, object]) -> _FakeResponse:
+        _ = json
+        response = self._responses[self.calls]
+        self.calls += 1
+        return response
+
+
+class _FakeDetailClient:
+    def __init__(self, responses_by_vuln: dict[str, list[_FakeResponse]]) -> None:
+        self._responses_by_vuln = responses_by_vuln
+        self._calls: dict[str, int] = {}
+
+    async def get(self, url: str) -> _FakeResponse:
+        vuln_id = url.rsplit("/", 1)[-1]
+        responses = self._responses_by_vuln[vuln_id]
+        idx = self._calls.get(vuln_id, 0)
+        self._calls[vuln_id] = idx + 1
+        if idx >= len(responses):
+            return responses[-1]
+        return responses[idx]
+
+
+def test_query_osv_batch_retries_on_429(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _no_sleep(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr(osv, "settings", SimpleNamespace(osv_http_retries=2))
+    monkeypatch.setattr(osv.asyncio, "sleep", _no_sleep)
+    client = _FakeBatchClient(
+        [
+            _FakeResponse(status_code=429, headers={"Retry-After": "0"}),
+            _FakeResponse(status_code=200, payload={"results": [{"vulns": [{"id": "OSV-1"}]}]}),
+        ]
+    )
+    deps = [Dependency(ecosystem="npm", name="demo", version="1.0.0")]
+    results = asyncio.run(osv._query_osv_batch(client, deps))
+    assert client.calls == 2
+    assert results == [{"vulns": [{"id": "OSV-1"}]}]
+
+
+def test_fetch_vuln_detail_chunk_handles_retries_and_skips_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _no_sleep(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr(
+        osv,
+        "settings",
+        SimpleNamespace(osv_http_retries=2, osv_vuln_detail_concurrency=2),
+    )
+    monkeypatch.setattr(osv.asyncio, "sleep", _no_sleep)
+    client = _FakeDetailClient(
+        {
+            "OSV-1": [
+                _FakeResponse(status_code=503),
+                _FakeResponse(status_code=200, payload={"id": "OSV-1", "summary": "ok"}),
+            ],
+            "OSV-2": [_FakeResponse(status_code=404)],
+            "OSV-3": [_FakeResponse(status_code=503), _FakeResponse(status_code=503)],
+        }
+    )
+    payloads = asyncio.run(osv._fetch_vuln_detail_chunk(client, ["OSV-1", "OSV-2", "OSV-3"]))
+    assert payloads == {"OSV-1": {"id": "OSV-1", "summary": "ok"}}
+
+
+def test_retry_delay_seconds_parsing() -> None:
+    assert osv._retry_delay_seconds("4", 0.5) == 4
+    assert osv._retry_delay_seconds("not-a-number", 0.5) == 0.5
+    assert osv._retry_delay_seconds(None, 0.5) == 0.5

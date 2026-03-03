@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,6 +17,10 @@ from .db import db
 OSV_BATCH_URL = "https://api.osv.dev/v1/querybatch"
 OSV_VULN_URL = "https://api.osv.dev/v1/vulns/{vuln_id}"
 SEVERITY_ORDER = {"unknown": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
+RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+DEFAULT_RETRY_BACKOFF_SECONDS = 0.5
+MAX_RETRY_BACKOFF_SECONDS = 8.0
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -128,23 +133,12 @@ async def scan_dependency_manifest(path: str | Path) -> ScanResult:
         cached_payloads[dep.cache_key] = cached
 
     if uncached:
-        async with httpx.AsyncClient(timeout=60, headers={"User-Agent": settings.user_agent}) as client:
+        async with httpx.AsyncClient(
+            timeout=settings.osv_http_timeout_seconds,
+            headers={"User-Agent": settings.user_agent},
+        ) as client:
             for chunk in _chunked(uncached, size=200):
-                payload = {
-                    "queries": [
-                        {
-                            "package": {"name": dep.name, "ecosystem": dep.ecosystem},
-                            "version": dep.version,
-                        }
-                        for dep in chunk
-                    ]
-                }
-                response = await client.post(OSV_BATCH_URL, json=payload)
-                response.raise_for_status()
-                data = response.json()
-                results = list(data.get("results", []))
-                if len(results) < len(chunk):
-                    results.extend({} for _ in range(len(chunk) - len(results)))
+                results = await _query_osv_batch(client, chunk)
                 for dep, result in zip(chunk, results):
                     normalized = _normalize_query_result(result)
                     cache_osv_result(dep.ecosystem, dep.name, dep.version, normalized)
@@ -255,6 +249,45 @@ def policy_failures(
     return failures
 
 
+async def _query_osv_batch(client: httpx.AsyncClient, deps: list[Dependency]) -> list[dict[str, Any]]:
+    payload = {
+        "queries": [
+            {
+                "package": {"name": dep.name, "ecosystem": dep.ecosystem},
+                "version": dep.version,
+            }
+            for dep in deps
+        ]
+    }
+    attempts = max(settings.osv_http_retries, 1)
+    backoff_seconds = DEFAULT_RETRY_BACKOFF_SECONDS
+    for attempt in range(1, attempts + 1):
+        try:
+            response = await client.post(OSV_BATCH_URL, json=payload)
+        except httpx.HTTPError:
+            if attempt == attempts:
+                raise
+            await asyncio.sleep(backoff_seconds)
+            backoff_seconds = min(backoff_seconds * 2, MAX_RETRY_BACKOFF_SECONDS)
+            continue
+
+        if response.status_code in RETRYABLE_STATUS_CODES and attempt < attempts:
+            retry_after = _retry_delay_seconds(response.headers.get("Retry-After"), backoff_seconds)
+            await asyncio.sleep(retry_after)
+            backoff_seconds = min(backoff_seconds * 2, MAX_RETRY_BACKOFF_SECONDS)
+            continue
+
+        response.raise_for_status()
+        data = response.json()
+        raw_results = data.get("results", []) if isinstance(data, dict) else []
+        results = list(raw_results) if isinstance(raw_results, list) else []
+        if len(results) < len(deps):
+            results.extend({} for _ in range(len(deps) - len(results)))
+        return results
+
+    raise RuntimeError("OSV batch query failed after retries")
+
+
 def _normalize_query_result(result: dict[str, Any] | Any) -> dict[str, Any]:
     if not isinstance(result, dict):
         return {"vulns": []}
@@ -323,7 +356,10 @@ async def _load_vulnerability_details(
     if not pending:
         return details
 
-    async with httpx.AsyncClient(timeout=60, headers={"User-Agent": settings.user_agent}) as client:
+    async with httpx.AsyncClient(
+        timeout=settings.osv_http_timeout_seconds,
+        headers={"User-Agent": settings.user_agent},
+    ) as client:
         for chunk in _chunked_strings(pending, size=100):
             responses = await _fetch_vuln_detail_chunk(client, chunk)
             for vuln_id, payload in responses.items():
@@ -335,17 +371,72 @@ async def _load_vulnerability_details(
 async def _fetch_vuln_detail_chunk(
     client: httpx.AsyncClient, vuln_ids: list[str]
 ) -> dict[str, dict[str, Any]]:
-    requests = [client.get(OSV_VULN_URL.format(vuln_id=vuln_id)) for vuln_id in vuln_ids]
-    responses = await asyncio.gather(*requests)
+    concurrency = max(settings.osv_vuln_detail_concurrency, 1)
+    semaphore = asyncio.Semaphore(concurrency)
     payloads: dict[str, dict[str, Any]] = {}
-    for vuln_id, response in zip(vuln_ids, responses):
-        if response.status_code == 404:
+
+    async def fetch_one(vuln_id: str) -> tuple[str, dict[str, Any] | None]:
+        async with semaphore:
+            payload = await _fetch_vuln_detail_with_retry(client, vuln_id)
+            return vuln_id, payload
+
+    results = await asyncio.gather(*(fetch_one(vuln_id) for vuln_id in vuln_ids))
+    for vuln_id, payload in results:
+        if payload is not None:
+            payloads[vuln_id] = payload
+    return payloads
+
+
+async def _fetch_vuln_detail_with_retry(
+    client: httpx.AsyncClient, vuln_id: str
+) -> dict[str, Any] | None:
+    attempts = max(settings.osv_http_retries, 1)
+    backoff_seconds = DEFAULT_RETRY_BACKOFF_SECONDS
+    url = OSV_VULN_URL.format(vuln_id=vuln_id)
+
+    for attempt in range(1, attempts + 1):
+        try:
+            response = await client.get(url)
+        except httpx.HTTPError as exc:
+            if attempt == attempts:
+                LOGGER.warning("OSV detail lookup failed for %s: %s", vuln_id, exc)
+                return None
+            await asyncio.sleep(backoff_seconds)
+            backoff_seconds = min(backoff_seconds * 2, MAX_RETRY_BACKOFF_SECONDS)
             continue
-        response.raise_for_status()
+
+        status = response.status_code
+        if status == 404:
+            return None
+        if status in RETRYABLE_STATUS_CODES:
+            if attempt == attempts:
+                LOGGER.warning("OSV detail lookup failed for %s with status %s", vuln_id, status)
+                return None
+            retry_after = _retry_delay_seconds(response.headers.get("Retry-After"), backoff_seconds)
+            await asyncio.sleep(retry_after)
+            backoff_seconds = min(backoff_seconds * 2, MAX_RETRY_BACKOFF_SECONDS)
+            continue
+        if status >= 400:
+            LOGGER.warning("OSV detail lookup failed for %s with status %s", vuln_id, status)
+            return None
+
         data = response.json()
         if isinstance(data, dict):
-            payloads[vuln_id] = data
-    return payloads
+            return data
+        LOGGER.warning("OSV detail lookup returned non-object payload for %s", vuln_id)
+        return None
+
+    return None
+
+
+def _retry_delay_seconds(retry_after_value: str | None, default_seconds: float) -> float:
+    if retry_after_value is None:
+        return default_seconds
+    try:
+        parsed = float(retry_after_value)
+    except ValueError:
+        return default_seconds
+    return parsed if parsed > 0 else default_seconds
 
 
 def _extract_severity(vuln: dict[str, Any]) -> str:

@@ -229,6 +229,9 @@ Environment variables:
 | `NVD_MAX_PER_30S` | `5` or `50` with key | NVD request budget per 30s |
 | `NVD_MAX_DAYS_PER_REQUEST` | `3` | NVD chunk window in days |
 | `OSV_TTL_HOURS` | `12` | OSV cache TTL |
+| `OSV_HTTP_TIMEOUT_SECONDS` | `60` | Timeout for OSV HTTP requests |
+| `OSV_HTTP_RETRIES` | `3` | Retry attempts for transient OSV API errors |
+| `OSV_VULN_DETAIL_CONCURRENCY` | `20` | Max concurrent OSV vulnerability detail lookups |
 | `KEV_TTL_HOURS` | `24` | KEV sync TTL |
 | `EPSS_TTL_HOURS` | `720` | EPSS sync TTL |
 | `VULNSCANNER_UA` | project UA | User-Agent for upstream API calls |
