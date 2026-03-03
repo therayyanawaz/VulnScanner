@@ -4,7 +4,8 @@ import asyncio
 import csv
 import io
 import json
-from datetime import datetime, timezone
+import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -324,21 +325,56 @@ def _parse_datetime_option(value: str | None, option_name: str) -> datetime | No
         return _parse_dt(value)
     except ValueError as exc:
         raise click.BadParameter(
-            "must be ISO8601 with timezone, e.g. 2024-08-01T00:00:00Z",
+            "must be ISO8601 with timezone (e.g. 2024-08-01T00:00:00Z) or a relative value (e.g. 7d, 12h, today, yesterday, now)",
             param_hint=option_name,
         ) from exc
 
 
-def _parse_dt(s: str) -> datetime:
-    s = s.strip()
-    if not s:
+def _parse_dt(s: str, *, now: datetime | None = None) -> datetime:
+    raw = s.strip()
+    if not raw:
         raise ValueError("empty datetime")
-    if s.endswith("Z"):
-        s = s[:-1] + "+00:00"
-    dt = datetime.fromisoformat(s)
+
+    now_utc = now.astimezone(timezone.utc) if now is not None else datetime.now(timezone.utc)
+    relative = _parse_relative_datetime(raw, now_utc)
+    if relative is not None:
+        return relative
+
+    iso_value = raw
+    if iso_value.endswith("Z"):
+        iso_value = iso_value[:-1] + "+00:00"
+    dt = datetime.fromisoformat(iso_value)
     if dt.tzinfo is None:
         raise ValueError("timezone offset required")
     return dt.astimezone(timezone.utc)
+
+
+def _parse_relative_datetime(value: str, now_utc: datetime) -> datetime | None:
+    lowered = value.strip().lower()
+    if lowered == "now":
+        return now_utc
+    day_start = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+    if lowered == "today":
+        return day_start
+    if lowered == "yesterday":
+        return day_start - timedelta(days=1)
+
+    match = re.match(r"^(?P<count>\d+)\s*(?P<unit>[a-zA-Z]+)$", lowered)
+    if not match:
+        return None
+
+    count = int(match.group("count"))
+    unit = match.group("unit")
+
+    if unit in {"m", "min", "mins", "minute", "minutes"}:
+        return now_utc - timedelta(minutes=count)
+    if unit in {"h", "hr", "hrs", "hour", "hours"}:
+        return now_utc - timedelta(hours=count)
+    if unit in {"d", "day", "days"}:
+        return now_utc - timedelta(days=count)
+    if unit in {"w", "week", "weeks"}:
+        return now_utc - timedelta(weeks=count)
+    return None
 
 
 if __name__ == "__main__":

@@ -123,11 +123,12 @@ Sync CVE data from NVD.
 
 ```bash
 vulnscanner nvd-sync --since "2024-08-01T00:00:00Z" --until "2024-08-02T00:00:00Z"
+vulnscanner nvd-sync --since 7d --until now
 ```
 
 Options:
-- `--since`: ISO8601 timestamp with timezone.
-- `--until`: ISO8601 timestamp with timezone.
+- `--since`: ISO8601 timestamp with timezone, or relative value (`7d`, `12h`, `today`, `yesterday`, `now`).
+- `--until`: ISO8601 timestamp with timezone, or relative value (`7d`, `12h`, `today`, `yesterday`, `now`).
 - `--debug`: raises full traceback for diagnostics.
 
 ### `vulnscanner kev-sync`

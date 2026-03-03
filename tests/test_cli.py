@@ -28,6 +28,37 @@ def test_parse_dt_rejects_empty_value() -> None:
         _parse_dt("   ")
 
 
+def test_parse_dt_accepts_now_keyword() -> None:
+    now = datetime(2026, 3, 3, 12, 0, 0, tzinfo=timezone.utc)
+    parsed = _parse_dt("now", now=now)
+    assert parsed == now
+
+
+def test_parse_dt_accepts_relative_days() -> None:
+    now = datetime(2026, 3, 3, 12, 0, 0, tzinfo=timezone.utc)
+    parsed = _parse_dt("7d", now=now)
+    assert parsed == datetime(2026, 2, 24, 12, 0, 0, tzinfo=timezone.utc)
+
+
+def test_parse_dt_accepts_relative_hours_with_word_unit() -> None:
+    now = datetime(2026, 3, 3, 12, 0, 0, tzinfo=timezone.utc)
+    parsed = _parse_dt("12 hours", now=now)
+    assert parsed == datetime(2026, 3, 3, 0, 0, 0, tzinfo=timezone.utc)
+
+
+def test_parse_dt_accepts_today_and_yesterday() -> None:
+    now = datetime(2026, 3, 3, 12, 34, 56, tzinfo=timezone.utc)
+    today = _parse_dt("today", now=now)
+    yesterday = _parse_dt("yesterday", now=now)
+    assert today == datetime(2026, 3, 3, 0, 0, 0, tzinfo=timezone.utc)
+    assert yesterday == datetime(2026, 3, 2, 0, 0, 0, tzinfo=timezone.utc)
+
+
+def test_parse_dt_rejects_unknown_relative_value() -> None:
+    with pytest.raises(ValueError):
+        _parse_dt("xyz")
+
+
 def test_resolve_scan_policy_none_keeps_inputs() -> None:
     resolved = _resolve_scan_policy("none", "high", True, 0.8)
     assert resolved == ("high", True, 0.8)
