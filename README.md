@@ -1,396 +1,260 @@
-# 🛡️ Free & Open Vulnerability Management Stack
+# VulnScanner
 
-A **zero-cost, open-source roadmap** to building a complete, extensible vulnerability scanning and management system — from dependency checks to container analysis, SBOM ingestion, and governance workflows — **without paid APIs or services**.
+[![CI](https://github.com/therayyanawaz/VulnScanner/actions/workflows/ci.yml/badge.svg)](https://github.com/therayyanawaz/VulnScanner/actions/workflows/ci.yml)
+[![Release](https://github.com/therayyanawaz/VulnScanner/actions/workflows/release.yml/badge.svg)](https://github.com/therayyanawaz/VulnScanner/actions/workflows/release.yml)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-This project combines **free public datasets**, **open-source scanning tools**, and **optional local mirroring** to avoid API rate limits, maintain privacy, and ensure long-term sustainability.
+Open-source vulnerability intelligence pipeline built for developers and security teams that want strong signal without paid feeds.
 
-**🎯 Phase 0 Complete:** Enterprise-grade foundation with NVD API integration, SQLite caching, and comprehensive CLI interface.
+VulnScanner ingests and normalizes public vulnerability data into a local SQLite store, then applies that intelligence to dependency manifests with practical CI policy controls.
 
----
+## Table of Contents
 
-## 📌 Project Goals
+- [Why VulnScanner](#why-vulnscanner)
+- [Current Feature Set](#current-feature-set)
+- [Architecture](#architecture)
+- [Data Sources](#data-sources)
+- [Quick Start](#quick-start)
+- [Command Reference](#command-reference)
+- [Policy and Reporting](#policy-and-reporting)
+- [Configuration](#configuration)
+- [Database Model](#database-model)
+- [CI/CD Integration](#cicd-integration)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [License](#license)
 
-* ✅ **Fully free to use and redistribute** (no license fees or API paywalls)
-* 🧩 Modular architecture: pick tools per environment, ecosystem, or use case
-* 🌍 Zero external API dependency when self-hosted
-* 🔐 Secure-by-default: supports offline use, local mirrors, and API rate guards
-* 📦 Developer- and CI-friendly CLI + JSON/HTML/CSV reports
-* 🧠 Prioritized remediation with CVSS, KEV (exploited), and EPSS (likelihood) data
+## Why VulnScanner
 
----
+- Free and redistributable vulnerability workflow.
+- Local-first architecture with SQLite caching.
+- Reliable ingestion with retry, rate limiting, and incremental sync.
+- Practical risk context: KEV exploitation signal and EPSS probability.
+- CI-oriented policy controls with deterministic exit behavior.
 
-## ⚙️ Principles to Stay Free
+> [!NOTE]
+> VulnScanner is intentionally modular. Today it ships a hardened data foundation and dependency scanning workflow; container, SBOM, and active scanning are planned next.
 
-* **Open-source scanners only**: OSV-Scanner, Trivy, Grype, Dependency‑Check, Nuclei
-* **Publicly available datasets**:
-  * [OSV.dev](https://osv.dev) for package+version vulnerabilities
-  * [NVD](https://nvd.nist.gov) for CVE/CVSS/CPE/CWE data
-  * [CISA KEV](https://github.com/cisagov/kev-data) for known exploited CVEs
-  * [EPSS](https://www.first.org/epss/) for exploitation likelihood
-  * [CIRCL CVE-Search](https://www.cve-search.org) (optional self-host)
-* **Rate-limiting and API caching** to avoid abuse or quota issues
-* **Optional local mirrors**: OpenCVE, cve-search, Trivy DB
+## Current Feature Set
 
----
+### Implemented commands
 
-## 🚦 Phase-by-Phase Roadmap
+- `vulnscanner nvd-sync`
+- `vulnscanner kev-sync`
+- `vulnscanner epss-sync`
+- `vulnscanner scan-deps`
 
-### ✅ **Phase 0: Free Data Stack and Safety** 🎯 **IMPLEMENTED**
+### What each command does
 
-**Foundation Features:**
-* ✅ **SQLite-based local cache** for all vulnerability data
-* ✅ **NVD API integration** with delta sync using `lastModStartDate`/`lastModEndDate`
-* ✅ **Rate limiting** (50 req/30s with API key, 5 req/30s without)
-* ✅ **Retry/backoff logic** with exponential delays for resilience
-* ✅ **CLI interface** for running syncs and managing data
-* ✅ **Environment-based configuration** for API keys and settings
-* ✅ OSV API integration with dependency scanning (`scan-deps`)
-* ✅ CISA KEV enrichment sync (`kev-sync`)
-* ✅ EPSS scoring sync (`epss-sync`)
+- `nvd-sync`: Incremental CVE ingestion from NVD with time-window chunking, retries, and API-key-aware rate limits.
+- `kev-sync`: Imports CISA Known Exploited Vulnerabilities and marks matching local CVEs.
+- `epss-sync`: Imports EPSS score feed and enriches local CVEs with `epss_score` and `epss_percentile`.
+- `scan-deps`: Scans `package-lock.json` or `requirements.txt` through OSV, enriches findings with local CVE/KEV/EPSS context, and enforces CI policy gates.
 
-**Quick Start:**
+## Architecture
+
+```mermaid
+flowchart LR
+    A[Dependency manifests\npackage-lock.json\nrequirements.txt] --> B[scan-deps]
+    B --> C[OSV API]
+    B --> D[(SQLite cache)]
+
+    E[nvd-sync] --> F[NVD API]
+    E --> D
+
+    G[kev-sync] --> H[CISA KEV feed]
+    G --> D
+
+    I[epss-sync] --> J[EPSS feed]
+    I --> D
+
+    D --> K[Policy engine\nseverity / KEV / EPSS]
+    K --> L[Console output\nJSON / CSV / Markdown]
+    K --> M[CI exit code]
+```
+
+## Data Sources
+
+| Source | Purpose | URL |
+| --- | --- | --- |
+| NVD API | Canonical CVE ingestion | `https://services.nvd.nist.gov/rest/json/cves/2.0` |
+| CISA KEV | Known exploited CVEs | `https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json` |
+| EPSS CSV | Exploit likelihood scoring | `https://epss.empiricalsecurity.com/epss_scores-current.csv.gz` |
+| OSV API | Package vulnerability resolution | `https://api.osv.dev/v1/querybatch` |
+
+## Quick Start
+
+### 1) Install
+
 ```bash
-# 1. Clone the repository
 git clone https://github.com/therayyanawaz/VulnScanner.git
 cd VulnScanner
-
-# 2. Create and activate virtual environment
 python -m venv .venv
-
-# On Windows:
-.venv\Scripts\activate
-# On Linux/Mac:
-source .venv/bin/activate
-
-# 3. Install the package
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -e .
+```
 
-# 4. Set API key for higher rate limits (optional but recommended)
-# Get free key from: https://nvd.nist.gov/developers/request-an-api-key
-export NVD_API_KEY="your-nvd-api-key-here"
+### 2) Optional NVD API key
 
-# 5. Sync recent CVEs to get started
+```bash
+export NVD_API_KEY="your-nvd-api-key"
+```
+
+### 3) Sync vulnerability intelligence
+
+```bash
 vulnscanner nvd-sync --since "2024-08-01T00:00:00Z"
+vulnscanner kev-sync
+vulnscanner epss-sync
 ```
 
-### 🔄 **Phase 1: MVP Dependency Scanning (In Progress)**
-
-* Use `osv-scanner` to detect vulnerable dependencies
-* Enrich output with KEV (exploited) and EPSS (likelihood) when local CVE data is synced
-* CLI outputs JSON/Markdown reports
-
-### 🔄 **Phase 1.5: CI/CD Integration + Caching**
-
-* Run scans as GitHub/GitLab CI jobs using free runners
-* Fail builds on high severity, KEV, or EPSS thresholds
-* Add modified-time NVD sync jobs to reduce API calls
-
-### 📦 **Phase 2: Container and OS Scanning**
-
-* Use `Trivy` or `Grype` to scan images, filesystems, and distros
-* Use free DBs (e.g., trivy-db) locally to support air-gapped scans
-
-### 🌐 **Phase 3: Optional Active Checks**
-
-* Integrate `Nuclei` in safe mode (no exploitation)
-* Scan HTTP targets using curated CVE detection templates
-
-### 📊 **Phase 4: Reporting and Governance**
-
-* Output HTML, JSON, CSV reports with filters: CVSS, KEV, EPSS
-* Integrate with dashboards or ticketing using structured exports
-
-### 📃 **Phase 5: SBOM + VEX (Free Only)**
-
-* Generate and consume SBOMs via Trivy/Syft
-* Ingest OpenVEX to suppress non-exploitable findings
-* No need for vendor subscriptions
-
-### 🏠 **Phase 6: Fully Self-Hosted Intelligence**
-
-* Host `OpenCVE` for web-based CVE triage/search
-* Host `cve-search` for vendor/product exploration and API lookups
-
----
-
-## 🛠️ Implementation Status
-
-### Phase 0 Architecture (Current)
-
-```
-┌─────────────────┐    ┌──────────────┐    ┌─────────────────┐
-│   NVD API       │────│ Rate Limiter │────│  SQLite Cache   │
-│ (CVE Database)  │    │ 50 req/30s   │    │ (vulnscanner.db)│
-└─────────────────┘    └──────────────┘    └─────────────────┘
-         │                      │                      │
-         └──────────────────────┼──────────────────────┘
-                                │
-                    ┌──────────────────┐
-                    │   CLI Interface  │
-                    │ vulnscanner.cli  │
-                    └──────────────────┘
-```
-
-### Database Schema
-
-```sql
--- Core CVE storage with enrichment fields
-CREATE TABLE cves (
-    cve_id TEXT PRIMARY KEY,
-    source TEXT NOT NULL,           -- 'NVD', 'OSV', etc.
-    json BLOB NOT NULL,             -- Full CVE JSON data
-    modified TIMESTAMP NOT NULL,    -- Last modified time
-    is_known_exploited INTEGER DEFAULT 0,  -- CISA KEV flag
-    epss_score REAL,                -- EPSS exploitation probability
-    epss_percentile REAL            -- EPSS percentile ranking
-);
-
--- Package+version caching for OSV lookups
-CREATE TABLE osv_cache (
-    ecosystem TEXT NOT NULL,        -- npm, PyPI, Go, etc.
-    package TEXT NOT NULL,
-    version TEXT NOT NULL,
-    fetched_at TIMESTAMP NOT NULL,
-    json BLOB NOT NULL,
-    PRIMARY KEY (ecosystem, package, version)
-);
-
--- CISA Known Exploited Vulnerabilities
-CREATE TABLE kev (
-    cve_id TEXT PRIMARY KEY,
-    json BLOB NOT NULL,
-    fetched_at TIMESTAMP NOT NULL
-);
-
--- EPSS (Exploit Prediction Scoring System)
-CREATE TABLE epss (
-    cve_id TEXT PRIMARY KEY,
-    score REAL NOT NULL,            -- 0.0 to 1.0 probability
-    percentile REAL NOT NULL,       -- 0.0 to 100.0 percentile
-    fetched_at TIMESTAMP NOT NULL
-);
-```
-
-### Configuration Options
+### 4) Scan dependencies with policy
 
 ```bash
-# Database location
-VULNSCANNER_DB="./vulnscanner.db"
-
-# NVD API settings
-NVD_API_KEY="your-key-here"         # Optional: increases rate limit
-NVD_MAX_PER_30S="50"               # With key: 50, without: 5
-NVD_MAX_DAYS_PER_REQUEST="3"       # Window size for delta sync
-
-# Cache TTLs (hours)
-OSV_TTL_HOURS="12"                 # OSV package cache lifetime
-KEV_TTL_HOURS="24"                 # CISA KEV cache lifetime  
-EPSS_TTL_HOURS="720"               # EPSS cache lifetime (30 days)
-
-# User agent for API requests
-VULNSCANNER_UA="VulnScanner/0.2.0 (+https://github.com/therayyanawaz/VulnScanner)"
+vulnscanner scan-deps package-lock.json --policy strict
 ```
 
-### Technical Implementation Details
+## Command Reference
 
-**Rate Limiting Strategy:**
-- Token bucket algorithm with 30-second windows
-- Automatic retry with exponential backoff (1s → 2s → 4s → 8s → 16s)
-- Graceful handling of HTTP 429 (Too Many Requests) responses
-- Respects `Retry-After` headers when provided
+### `vulnscanner nvd-sync`
 
-**Delta Sync Optimization:**
-- Tracks last successful sync timestamp in `meta` table
-- Uses NVD's `lastModStartDate`/`lastModEndDate` parameters
-- Automatically chunks large time windows (default: 7-day max per request)
-- Skips redundant requests when no new data is available
-
-**Data Integrity:**
-- SQLite WAL mode for concurrent read/write access
-- Foreign key constraints for referential integrity
-- JSON schema validation for API responses
-- Atomic transactions for batch CVE imports
-
-**Error Handling:**
-- Comprehensive HTTP status code handling (404, 429, 500, etc.)
-- Network timeout and connection error recovery
-- Malformed JSON response protection
-- Graceful degradation when external APIs are unavailable
-
-**Performance Optimizations:**
-- Indexed database queries for fast CVE lookups
-- Compressed JSON storage to minimize disk usage
-- Efficient pagination handling for large result sets
-- Connection pooling and keep-alive for HTTP requests
-
----
-
-## 📦 Recommended Free Tools
-
-| Function              | Tool                        | Notes                         |
-| --------------------- | --------------------------- | ----------------------------- |
-| Dependency scanning   | [OSV-Scanner](https://github.com/google/osv-scanner) | Free frontend to OSV API      |
-| Container/OS scanning | [Trivy](https://github.com/aquasecurity/trivy), [Grype](https://github.com/anchore/grype) | Free DBs, air-gap friendly    |
-| Active web scanning   | [Nuclei](https://github.com/projectdiscovery/nuclei) | Optional, safe-mode supported |
-| SBOM generation       | [Trivy](https://github.com/aquasecurity/trivy), [Syft](https://github.com/anchore/syft) | Support SPDX, CycloneDX       |
-| VEX support           | [Grype](https://github.com/anchore/grype) | Supports OpenVEX              |
-| CVE enrichment        | [NVD API](https://nvd.nist.gov/developers) | Free key improves rate        |
-| Exploit flags         | [CISA KEV](https://github.com/cisagov/kev-data) | Public JSON feed              |
-| Exploit likelihood    | [EPSS API](https://www.first.org/epss/api/) | Free, score by CVE            |
-| CVE search engine     | [cve-search](https://github.com/cve-search/cve-search) | Self-host recommended         |
-| CVE triage UI/API     | [OpenCVE](https://docs.opencve.io) | Docker-ready, browsable UI    |
-
----
-
-## 🧱 Architecture Overview
-
-```
-┌──────────────────┐
-│ Package Manifests│
-│   Containers     │
-│   SBOM Files     │
-└──────────────────┘
-         │
-         ▼
-  ┌────────────┐
-  │ Scanners   │───┬──► OSV-Scanner
-  └────────────┘   ├──► Trivy / Grype
-         │         └──► Nuclei (opt)
-         ▼
-  ┌────────────┐
-  │ Enrichment │───► NVD API / KEV / EPSS
-  └────────────┘
-         ▼
-  ┌────────────┐
-  │ Prioritize │───► CVSS + KEV + EPSS
-  └────────────┘
-         ▼
-  ┌────────────┐
-  │ Reporting  │───► HTML, JSON, CSV
-  └────────────┘
-```
-
----
-
-## 📆 Suggested Timeline
-
-| Month | Milestone                                      |
-| ----- | ---------------------------------------------- |
-| 1     | MVP with OSV-Scanner + NVD/KEV/EPSS enrichment |
-| 2     | CI integration + caching for NVD/OSV/EPSS      |
-| 3     | Add Trivy/Grype for image and OS scanning      |
-| 4     | Optional: Add Nuclei active checks (safe mode) |
-| 5     | SBOM I/O, OpenVEX ingestion                    |
-| 6     | Self-host OpenCVE and cve-search               |
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-Before you begin, ensure you have the following installed on your system:
-- **Python 3.10 or higher** - [Download from python.org](https://www.python.org/downloads/)
-- **pip** (included with Python)
-- **Git** - [Download from git-scm.com](https://git-scm.com/)
-
-### Phase 0: Data Foundation Setup
+Sync CVE data from NVD.
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/therayyanawaz/VulnScanner.git
-cd VulnScanner
-
-# 2. Create and activate virtual environment
-python -m venv .venv
-
-# On Windows:
-.venv\Scripts\activate
-# On Linux/Mac:
-source .venv/bin/activate
-
-# 3. Install the package with dependencies
-pip install -e .
-
-# 4. Optional: Set NVD API key for higher rate limits
-# Get free key from: https://nvd.nist.gov/developers/request-an-api-key
-export NVD_API_KEY="your-nvd-api-key-here"
-
-# 5. Initialize database and sync recent CVEs
-vulnscanner nvd-sync --since "2024-01-01T00:00:00Z"
-
-# 6. Verify the setup worked
-python -c "
-import sqlite3
-conn = sqlite3.connect('vulnscanner.db')
-count = conn.execute('SELECT COUNT(*) FROM cves').fetchone()[0]
-print(f'CVEs synced to database: {count}')
-conn.close()
-"
-```
-
-### Available Commands
-
-```bash
-# Currently implemented commands:
-
-# Sync CVEs from a specific date range
 vulnscanner nvd-sync --since "2024-08-01T00:00:00Z" --until "2024-08-02T00:00:00Z"
+```
 
-# Debug mode with verbose logging
-vulnscanner nvd-sync --since "2024-08-01T00:00:00Z" --debug
+Options:
+- `--since`: ISO8601 timestamp with timezone.
+- `--until`: ISO8601 timestamp with timezone.
+- `--debug`: raises full traceback for diagnostics.
 
-# Scan dependencies from package-lock.json or requirements.txt
+### `vulnscanner kev-sync`
+
+Sync CISA KEV feed and enrich local CVEs.
+
+```bash
+vulnscanner kev-sync
+vulnscanner kev-sync --force
+```
+
+Options:
+- `--force`: bypass TTL and refresh now.
+
+### `vulnscanner epss-sync`
+
+Sync EPSS feed and enrich local CVEs.
+
+```bash
+vulnscanner epss-sync
+vulnscanner epss-sync --force
+```
+
+Options:
+- `--force`: bypass TTL and refresh now.
+
+### `vulnscanner scan-deps`
+
+Scan dependencies and apply policy.
+
+```bash
 vulnscanner scan-deps package-lock.json
+vulnscanner scan-deps requirements.txt --format json --output reports/deps.json
+```
 
-# Fail CI when high/critical vulnerabilities are found
+Supported manifests:
+- `package-lock.json`
+- `requirements.txt` (exact pins: `pkg==version`)
+
+Options:
+- `--format [table|json|csv|markdown]`
+- `--output FILE`
+- `--min-severity [low|medium|high|critical]`
+- `--kev-only`
+- `--epss-min 0.0..1.0`
+- `--fail-on [low|medium|high|critical]`
+- `--fail-on-kev`
+- `--fail-on-epss 0.0..1.0`
+- `--policy [none|balanced|strict]`
+- `--debug`
+
+## Policy and Reporting
+
+### Policy presets
+
+- `none`: no preset behavior.
+- `balanced`: default fail gates if not explicitly set:
+  - severity `critical`
+  - EPSS `>= 0.9`
+- `strict`: default fail gates if not explicitly set:
+  - severity `high`
+  - EPSS `>= 0.7`
+
+### Real-world policy examples
+
+```bash
+# Fail on high+ findings
 vulnscanner scan-deps package-lock.json --fail-on high
 
-# Filter output to exploitable/high-risk findings only
+# Only review likely-exploitable set
 vulnscanner scan-deps package-lock.json --min-severity high --kev-only --epss-min 0.5
 
-# Fail when any displayed finding is KEV or has EPSS >= 0.7
+# Hard fail for exploited or high EPSS findings
 vulnscanner scan-deps package-lock.json --fail-on-kev --fail-on-epss 0.7
 
-# Use preset policy defaults for CI
+# CI baseline
 vulnscanner scan-deps package-lock.json --policy strict
-
-# JSON output for pipelines
-vulnscanner scan-deps requirements.txt --format json --output reports/deps.json
-
-# Export CSV/Markdown reports
-vulnscanner scan-deps requirements.txt --format csv --output reports/deps.csv
-vulnscanner scan-deps requirements.txt --format markdown --output reports/deps.md
-
-# Sync CISA KEV feed and mark exploited CVEs in local DB
-vulnscanner kev-sync
-
-# Sync EPSS scores and enrich local CVE records
-vulnscanner epss-sync
-
-# Help
-vulnscanner --help
-vulnscanner nvd-sync --help
-vulnscanner scan-deps --help
-vulnscanner kev-sync --help
-vulnscanner epss-sync --help
 ```
 
-### Future Phases (Coming Soon)
+### Output formats
 
-```bash
-# Phase 2 (planned): Container scanning integration  
-vulnscanner scan-image nginx:latest
+- `table`: human-readable terminal summary.
+- `json`: structured machine output for automation.
+- `csv`: spreadsheet and BI-friendly export.
+- `markdown`: audit-ready report for PR comments and docs.
 
-# Phase 3 (planned): SBOM analysis
-vulnscanner scan-sbom app.spdx.json
-```
+## Configuration
 
-### CI Setup Example (Future)
+Environment variables:
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `VULNSCANNER_DB` | `vulnscanner.db` | SQLite database path |
+| `NVD_API_KEY` | unset | Enables higher NVD request quota |
+| `NVD_MAX_PER_30S` | `5` or `50` with key | NVD request budget per 30s |
+| `NVD_MAX_DAYS_PER_REQUEST` | `3` | NVD chunk window in days |
+| `OSV_TTL_HOURS` | `12` | OSV cache TTL |
+| `KEV_TTL_HOURS` | `24` | KEV sync TTL |
+| `EPSS_TTL_HOURS` | `720` | EPSS sync TTL |
+| `VULNSCANNER_UA` | project UA | User-Agent for upstream API calls |
+
+> [!TIP]
+> Keep feed sync commands on a schedule (for example daily), then run `scan-deps` per commit/PR.
+
+## Database Model
+
+Core tables:
+
+- `cves`: canonical vulnerability records plus enrichment fields (`is_known_exploited`, `epss_score`, `epss_percentile`).
+- `meta`: operational sync state (`nvd_last_mod`, `kev_last_sync`, `epss_last_sync`).
+- `osv_cache`: package/version OSV query cache.
+- `osv_vuln_cache`: OSV vulnerability detail cache.
+- `kev`: raw KEV records.
+- `epss`: raw EPSS score records.
+
+SQLite is configured with:
+
+- WAL mode
+- foreign keys enabled
+- indexes on CVE source and modified timestamp
+
+## CI/CD Integration
+
+Minimal GitHub Actions example:
 
 ```yaml
-# .github/workflows/vuln-scan.yml
-name: Vulnerability Scan
+name: Dependency Risk Gate
 on: [push, pull_request]
 
 jobs:
@@ -398,156 +262,57 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-      
-      - name: Install VulnScanner
-        run: |
-          pip install git+https://github.com/therayyanawaz/VulnScanner.git
-          
-      - name: Sync CVE database
+          python-version: "3.12"
+      - run: pip install -e .
+      - name: Refresh intelligence
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
-        run: vulnscanner nvd-sync --since "2024-01-01T00:00:00Z"
-        
-      - name: Scan dependencies
-        run: vulnscanner scan-deps package-lock.json --fail-on critical
+        run: |
+          vulnscanner nvd-sync --since "2024-01-01T00:00:00Z"
+          vulnscanner kev-sync
+          vulnscanner epss-sync
+      - name: Enforce policy
+        run: vulnscanner scan-deps package-lock.json --policy strict
 ```
 
----
+## Roadmap
 
-## 🧭 References & Data Sources
+### Completed
 
-### Core Vulnerability Databases
-* **[OSV API](https://osv.dev)** - Open Source Vulnerabilities database ([Documentation](https://google.github.io/osv.dev/api/))
-* **[NVD API](https://nvd.nist.gov/developers/start-here)** - National Vulnerability Database ([Get API Key](https://nvd.nist.gov/developers/request-an-api-key))
-* **[CISA KEV](https://github.com/cisagov/kev-data)** - Known Exploited Vulnerabilities ([JSON Feed](https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json))
-* **[EPSS API](https://www.first.org/epss/api/)** - Exploit Prediction Scoring System ([CSV Download](https://epss.empiricalsecurity.com/epss_scores-current.csv.gz))
+- NVD ingestion with incremental sync and resilience controls.
+- KEV sync and CVE exploitation flagging.
+- EPSS sync and CVE scoring enrichment.
+- Dependency scanning with policy gates and multiple report formats.
 
-### Self-Hosted Solutions  
-* **[cve-search](https://github.com/cve-search/cve-search)** - Local CVE search engine with MongoDB backend
-* **[OpenCVE](https://docs.opencve.io)** - Web-based CVE monitoring and alerting platform
+### Next
 
-### Scanning Tools
-* **[OSV-Scanner](https://github.com/google/osv-scanner)** - Google's official OSV CLI scanner
-* **[Trivy](https://github.com/aquasecurity/trivy)** - Multi-purpose security scanner (containers, IaC, filesystems)
-* **[Grype](https://github.com/anchore/grype)** - Container image and filesystem vulnerability scanner  
-* **[Nuclei](https://github.com/projectdiscovery/nuclei)** - Template-based vulnerability scanner
-* **[Syft](https://github.com/anchore/syft)** - SBOM generation tool for containers and filesystems
+- Container and filesystem scanning integration (`scan-image`).
+- SBOM ingestion and analysis (`scan-sbom`).
+- Rich HTML reporting and governance workflows.
+- Optional self-hosted intelligence integrations.
 
----
+## Contributing
 
-## 📜 License
+Contributions are welcome.
 
-All tooling and data referenced here are open source and fall under their respective licenses. This project provides an orchestration and integration roadmap using only free and redistributable components.
-
----
-
----
-
-## 🏆 Project Status & Roadmap
-
-### ✅ Completed (Phase 0)
-- [x] SQLite-based vulnerability database
-- [x] NVD API integration with delta sync
-- [x] Rate limiting and retry logic
-- [x] CLI interface with debug support  
-- [x] Environment-based configuration
-- [x] Database schemas for enrichment (KEV, EPSS)
-
-### 🔄 In Progress (Phase 1)
-- [x] OSV API client for package vulnerability lookups
-- [x] CISA KEV enrichment integration (`kev-sync`)
-- [x] EPSS scoring integration (`epss-sync`)
-- [x] Basic dependency scanning workflow (`scan-deps`)
-
-### 📋 Planned (Phase 2+)
-- [ ] Container and OS image scanning
-- [ ] SBOM generation and analysis
-- [ ] Active web vulnerability checks
-- [ ] HTML/JSON reporting
-- [ ] Self-hosted CVE search and triage
-
-### 🎯 Success Metrics
-- **Zero external API dependencies** when self-hosted
-- **Sub-second response times** for cached lookups
-- **100% free and open source** components
-- **CI/CD ready** with configurable fail thresholds
-
----
-
-## 🤝 Contributions
-
-Contributions welcome! This project aims to democratize vulnerability management by providing enterprise-grade capabilities using only free and open-source components.
-
-**How to contribute:**
-- 🐛 Report bugs or API issues
-- 💡 Suggest new data sources or scanners
-- 🔧 Implement additional phases or features
-- 📚 Improve documentation and examples
-- 🧪 Add test cases and CI improvements
-
-**Development setup:**
 ```bash
-# 1. Clone the repository
 git clone https://github.com/therayyanawaz/VulnScanner.git
 cd VulnScanner
-
-# 2. Create and activate virtual environment
 python -m venv .venv
-
-# On Windows:
-.venv\Scripts\activate
-# On Linux/Mac:
 source .venv/bin/activate
-
-# 3. Install with development dependencies
 pip install -e ".[dev]"
+pytest -q
 ```
 
-Let's keep vulnerability management open and accessible for everyone! 🛡️
+Suggested contribution areas:
 
----
+- parser support for additional dependency ecosystems
+- scanner adapters (containers, SBOM, IaC)
+- report UX and policy rule extensions
+- performance and storage optimizations
 
-## 🔧 Troubleshooting
+## License
 
-### Common Setup Issues
-
-**Issue: `vulnscanner` command not found**
-```bash
-# Solution 1: Ensure virtual environment is activated
-source .venv/bin/activate  # Linux/Mac
-.venv\Scripts\activate     # Windows
-
-# Solution 2: Use Python module instead
-python -m vulnscanner.cli --help
-```
-
-**Issue: Permission errors during installation**
-```bash
-# Solution: Use virtual environment (recommended)
-python -m venv .venv
-source .venv/bin/activate  # or .venv\Scripts\activate on Windows
-pip install -e .
-```
-
-**Issue: Database permission errors**
-```bash
-# Solution: Check database file permissions
-ls -la vulnscanner.db  # Linux/Mac
-# Ensure current user has read/write access
-```
-
-**Issue: API rate limiting errors**
-```bash
-# Solution: Get a free NVD API key for higher limits
-# Visit: https://nvd.nist.gov/developers/request-an-api-key
-export NVD_API_KEY="your-api-key-here"
-```
-
-### Getting Help
-
-- Check the [Issues](https://github.com/therayyanawaz/VulnScanner/issues) page for known problems
-- Use debug mode for verbose output: `vulnscanner nvd-sync --debug`
-- Ensure you're using Python 3.8 or higher: `python --version`
+MIT. See [LICENSE](LICENSE).
