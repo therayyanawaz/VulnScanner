@@ -162,6 +162,7 @@ Scan dependencies and apply policy.
 ```bash
 vulnscanner scan-deps package-lock.json
 vulnscanner scan-deps requirements.txt --format json --output reports/deps.json
+vulnscanner scan-deps Pipfile.lock --format sarif --output reports/deps.sarif
 ```
 
 Supported manifests:
@@ -170,7 +171,7 @@ Supported manifests:
 - `requirements.txt` (exact pins: `pkg==version`)
 
 Options:
-- `--format [table|json|csv|markdown]`
+- `--format [table|json|csv|markdown|sarif]`
 - `--output FILE`
 - `--min-severity [low|medium|high|critical]`
 - `--kev-only`
@@ -215,6 +216,7 @@ vulnscanner scan-deps package-lock.json --policy strict
 - `json`: structured machine output for automation.
 - `csv`: spreadsheet and BI-friendly export.
 - `markdown`: audit-ready report for PR comments and docs.
+- `sarif`: static-analysis exchange format for GitHub code scanning and security tooling.
 
 ## Configuration
 

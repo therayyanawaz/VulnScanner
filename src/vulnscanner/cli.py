@@ -62,7 +62,12 @@ def nvd_sync(since_str: Optional[str], until_str: Optional[str], debug: bool) ->
 
 @main.command("scan-deps")
 @click.argument("manifest_path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
-@click.option("--format", "output_format", type=click.Choice(["table", "json", "csv", "markdown"]), default="table")
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["table", "json", "csv", "markdown", "sarif"]),
+    default="table",
+)
 @click.option("--output", "output_path", type=click.Path(dir_okay=False, path_type=Path), default=None)
 @click.option(
     "--fail-on",
@@ -195,6 +200,8 @@ def _render_scan_result(result: ScanResult, output_format: str) -> str:
         return _render_csv(result)
     if output_format == "markdown":
         return _render_markdown(result)
+    if output_format == "sarif":
+        return _render_sarif(result)
     lines = [
         f"Dependencies scanned: {result.dependencies_total}",
         f"Cache hits: {result.cache_hits}",
@@ -301,6 +308,92 @@ def _render_markdown(result: ScanResult) -> str:
             f"{summary} |"
         )
     return "\n".join(lines)
+
+
+def _render_sarif(result: ScanResult) -> str:
+    rules_by_id: dict[str, dict[str, object]] = {}
+    sarif_results: list[dict[str, object]] = []
+
+    for finding in result.findings:
+        level = _sarif_level(finding.severity)
+        rule_id = finding.vuln_id
+        if rule_id not in rules_by_id:
+            description = finding.summary.strip() if finding.summary.strip() else finding.vuln_id
+            properties: dict[str, object] = {
+                "severity": finding.severity,
+                "ecosystem": finding.ecosystem,
+            }
+            if finding.cve_id:
+                properties["cve"] = finding.cve_id
+            rules_by_id[rule_id] = {
+                "id": rule_id,
+                "name": rule_id,
+                "shortDescription": {"text": description},
+                "defaultConfiguration": {"level": level},
+                "properties": properties,
+            }
+
+        detail_parts = [f"[{finding.severity}] {finding.package}@{finding.version} ({finding.ecosystem})"]
+        if finding.cve_id:
+            detail_parts.append(f"CVE={finding.cve_id}")
+        if finding.is_known_exploited:
+            detail_parts.append("KEV=yes")
+        if finding.epss_score is not None:
+            detail_parts.append(f"EPSS={finding.epss_score:.5f}")
+        message = " ".join(detail_parts)
+        if finding.summary.strip():
+            message = f"{message} - {finding.summary.strip()}"
+
+        sarif_results.append(
+            {
+                "ruleId": rule_id,
+                "level": level,
+                "message": {"text": message},
+                "locations": [
+                    {
+                        "logicalLocations": [
+                            {
+                                "kind": "package",
+                                "name": f"{finding.package}@{finding.version}",
+                                "fullyQualifiedName": f"{finding.ecosystem}/{finding.package}",
+                            }
+                        ]
+                    }
+                ],
+                "partialFingerprints": {
+                    "vulnscannerFindingId": (
+                        f"{finding.ecosystem}:{finding.package}:{finding.version}:{finding.vuln_id}"
+                    )
+                },
+            }
+        )
+
+    sarif_doc = {
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "VulnScanner",
+                        "informationUri": "https://github.com/therayyanawaz/VulnScanner",
+                        "rules": sorted(rules_by_id.values(), key=lambda item: str(item["id"])),
+                    }
+                },
+                "results": sarif_results,
+            }
+        ],
+    }
+    return json.dumps(sarif_doc, indent=2)
+
+
+def _sarif_level(severity: str) -> str:
+    lowered = severity.lower()
+    if lowered in {"critical", "high"}:
+        return "error"
+    if lowered == "medium":
+        return "warning"
+    return "note"
 
 
 def _resolve_scan_policy(

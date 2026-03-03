@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 
 import pytest
@@ -74,7 +75,7 @@ def test_resolve_scan_policy_strict_preserves_explicit_overrides() -> None:
     assert resolved == ("critical", True, 0.95)
 
 
-def test_render_scan_result_csv_and_markdown() -> None:
+def test_render_scan_result_csv_markdown_and_sarif() -> None:
     result = ScanResult(
         dependencies_total=1,
         cache_hits=0,
@@ -97,7 +98,14 @@ def test_render_scan_result_csv_and_markdown() -> None:
     )
     csv_out = _render_scan_result(result, "csv")
     md_out = _render_scan_result(result, "markdown")
+    sarif_out = _render_scan_result(result, "sarif")
+    sarif_data = json.loads(sarif_out)
     assert "id,package,ecosystem,version,severity" in csv_out
     assert "OSV-1,demo,npm,1.2.3,high,CVE-2024-0001,true,0.800000,0.950000" in csv_out
     assert md_out.startswith("# Dependency Scan Report")
     assert "| high | OSV-1 | demo@1.2.3 | CVE-2024-0001 | yes | 0.80000 |" in md_out
+    assert sarif_data["version"] == "2.1.0"
+    run = sarif_data["runs"][0]
+    assert run["tool"]["driver"]["name"] == "VulnScanner"
+    assert run["results"][0]["ruleId"] == "OSV-1"
+    assert run["results"][0]["level"] == "error"
