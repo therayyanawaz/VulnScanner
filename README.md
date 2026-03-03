@@ -52,7 +52,7 @@ VulnScanner ingests and normalizes public vulnerability data into a local SQLite
 - `nvd-sync`: Incremental CVE ingestion from NVD with time-window chunking, retries, and API-key-aware rate limits.
 - `kev-sync`: Imports CISA Known Exploited Vulnerabilities and marks matching local CVEs.
 - `epss-sync`: Imports EPSS score feed and enriches local CVEs with `epss_score` and `epss_percentile`.
-- `scan-deps`: Scans `package-lock.json`, `poetry.lock`, `uv.lock`, `Pipfile.lock`, or `requirements.txt` through OSV, enriches findings with local CVE/KEV/EPSS context, and enforces CI policy gates.
+- `scan-deps`: Scans `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `poetry.lock`, `uv.lock`, `Pipfile.lock`, or `requirements.txt` through OSV, enriches findings with local CVE/KEV/EPSS context, and enforces CI policy gates.
 - `state show`: Displays current sync checkpoint metadata (`nvd_last_mod`, `kev_last_sync`, `epss_last_sync`).
 - `state reset`: Clears selected or all sync checkpoint metadata.
 
@@ -60,7 +60,7 @@ VulnScanner ingests and normalizes public vulnerability data into a local SQLite
 
 ```mermaid
 flowchart LR
-    A[Dependency manifests\npackage-lock.json\npoetry.lock\nuv.lock\nPipfile.lock\nrequirements.txt] --> B[scan-deps]
+    A[Dependency manifests\npackage-lock.json\nyarn.lock\npnpm-lock.yaml\npoetry.lock\nuv.lock\nPipfile.lock\nrequirements.txt] --> B[scan-deps]
     B --> C[OSV API]
     B --> D[(SQLite cache)]
 
@@ -200,6 +200,8 @@ vulnscanner scan-deps package-lock.json --baseline reports/prev.json --new-only
 
 Supported manifests:
 - `package-lock.json`
+- `yarn.lock`
+- `pnpm-lock.yaml`
 - `poetry.lock`
 - `uv.lock`
 - `Pipfile.lock` (exact lock entries: `==version` or `===version`)

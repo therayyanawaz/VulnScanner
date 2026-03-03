@@ -112,6 +112,10 @@ def parse_dependency_manifest(path: str | Path) -> list[Dependency]:
     lower_name = manifest.name.lower()
     if lower_name.endswith("package-lock.json"):
         return _parse_package_lock(manifest)
+    if lower_name == "yarn.lock":
+        return _parse_yarn_lock(manifest)
+    if lower_name == "pnpm-lock.yaml":
+        return _parse_pnpm_lock(manifest)
     if lower_name == "poetry.lock":
         return _parse_poetry_lock(manifest)
     if lower_name == "uv.lock":
@@ -122,7 +126,8 @@ def parse_dependency_manifest(path: str | Path) -> list[Dependency]:
         return _parse_requirements(manifest)
     raise ValueError(
         "Unsupported manifest: "
-        f"{manifest.name}. Supported: package-lock.json, poetry.lock, uv.lock, Pipfile.lock, *.txt"
+        f"{manifest.name}. Supported: package-lock.json, yarn.lock, pnpm-lock.yaml, "
+        "poetry.lock, uv.lock, Pipfile.lock, *.txt"
     )
 
 
@@ -507,6 +512,110 @@ def _parse_package_lock(path: Path) -> list[Dependency]:
         return _dedupe_dependencies(dependencies)
 
     return []
+
+
+def _parse_yarn_lock(path: Path) -> list[Dependency]:
+    dependencies: list[Dependency] = []
+    selectors: list[str] = []
+    version: str | None = None
+    key_line = re.compile(r'^([^\s].*):\s*$')
+    version_line = re.compile(r'^\s{2}version(?:\s+|:\s*)"?([^"\s]+)"?\s*$')
+
+    def flush() -> None:
+        nonlocal selectors, version
+        if version is None:
+            selectors = []
+            return
+        if not _is_scanable_version(version):
+            selectors = []
+            version = None
+            return
+        for selector in selectors:
+            name = _parse_yarn_selector_name(selector)
+            if name:
+                dependencies.append(Dependency(ecosystem="npm", name=name, version=version))
+        selectors = []
+        version = None
+
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.rstrip()
+        if not line or line.lstrip().startswith("#"):
+            continue
+        matched_key = key_line.match(line)
+        if matched_key:
+            flush()
+            raw_key = matched_key.group(1).strip().strip('"').strip("'")
+            if raw_key == "__metadata":
+                selectors = []
+                continue
+            selectors = [part.strip().strip('"').strip("'") for part in raw_key.split(",")]
+            continue
+        matched_version = version_line.match(line)
+        if matched_version:
+            version = matched_version.group(1).strip()
+    flush()
+    return _dedupe_dependencies(dependencies)
+
+
+def _parse_yarn_selector_name(selector: str) -> str | None:
+    value = selector.strip()
+    match = re.match(r'^(@[^/]+/[^@]+|[^@]+)@', value)
+    if not match:
+        return None
+    return match.group(1)
+
+
+def _parse_pnpm_lock(path: Path) -> list[Dependency]:
+    dependencies: list[Dependency] = []
+    in_packages = False
+    top_level_line = re.compile(r'^[A-Za-z0-9_-]+:\s*$')
+    package_key_line = re.compile(r'^\s{2}([^:][^#]*):\s*$')
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.rstrip()
+        if not line or line.lstrip().startswith("#"):
+            continue
+        if not line.startswith(" "):
+            if top_level_line.match(line):
+                in_packages = line.strip() == "packages:"
+            else:
+                in_packages = False
+            continue
+        if not in_packages:
+            continue
+        key_match = package_key_line.match(line)
+        if not key_match:
+            continue
+        key = key_match.group(1).strip().strip('"').strip("'")
+        parsed = _parse_pnpm_package_key(key)
+        if parsed is None:
+            continue
+        dependencies.append(Dependency(ecosystem="npm", name=parsed[0], version=parsed[1]))
+    return _dedupe_dependencies(dependencies)
+
+
+def _parse_pnpm_package_key(key: str) -> tuple[str, str] | None:
+    value = key.lstrip("/")
+    scoped = re.match(r'^(@[^/]+/[^@]+)@([^(/]+)', value)
+    if scoped is not None:
+        name, version = scoped.group(1), scoped.group(2)
+    else:
+        normal = re.match(r'^([^@/][^@]*)@([^(/]+)', value)
+        if normal is None:
+            return None
+        name, version = normal.group(1), normal.group(2)
+    if not _is_scanable_version(version):
+        return None
+    return name, version
+
+
+def _is_scanable_version(version: str) -> bool:
+    lowered = version.strip().lower()
+    if not lowered:
+        return False
+    disallowed_prefixes = ("workspace:", "file:", "link:", "portal:", "patch:")
+    if lowered.startswith(disallowed_prefixes):
+        return False
+    return True
 
 
 def _walk_npm_tree(tree: dict[str, Any], sink: list[Dependency]) -> None:

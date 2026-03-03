@@ -45,6 +45,52 @@ def test_parse_package_lock_v2(tmp_path: Path) -> None:
     assert len(deps) == 2
 
 
+def test_parse_yarn_lock_classic(tmp_path: Path) -> None:
+    path = tmp_path / "yarn.lock"
+    path.write_text(
+        "\n".join(
+            [
+                '"lodash@^4.17.0":',
+                '  version "4.17.21"',
+                "",
+                '"@types/node@^20.0.0":',
+                '  version "20.11.30"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    deps = parse_dependency_manifest(path)
+    assert Dependency("npm", "lodash", "4.17.21") in deps
+    assert Dependency("npm", "@types/node", "20.11.30") in deps
+    assert len(deps) == 2
+
+
+def test_parse_pnpm_lock_yaml(tmp_path: Path) -> None:
+    path = tmp_path / "pnpm-lock.yaml"
+    path.write_text(
+        "\n".join(
+            [
+                "lockfileVersion: '9.0'",
+                "packages:",
+                "  /lodash@4.17.21:",
+                "    resolution: {integrity: sha512-demo}",
+                "  /@types/node@20.11.30:",
+                "    resolution: {integrity: sha512-demo}",
+                "  /local-lib@link:../local-lib:",
+                "    resolution: {directory: ../local-lib, type: directory}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    deps = parse_dependency_manifest(path)
+    assert Dependency("npm", "lodash", "4.17.21") in deps
+    assert Dependency("npm", "@types/node", "20.11.30") in deps
+    assert all(item.version != "link:../local-lib" for item in deps)
+    assert len(deps) == 2
+
+
 def test_parse_requirements_txt(tmp_path: Path) -> None:
     path = tmp_path / "requirements.txt"
     path.write_text(
@@ -154,7 +200,10 @@ def test_parse_unsupported_manifest_lists_supported(tmp_path: Path) -> None:
     path.write_text("<project/>", encoding="utf-8")
     with pytest.raises(
         ValueError,
-        match=r"Supported: package-lock\.json, poetry\.lock, uv\.lock, Pipfile\.lock, \*\.txt",
+        match=(
+            r"Supported: package-lock\.json, yarn\.lock, pnpm-lock\.yaml, "
+            r"poetry\.lock, uv\.lock, Pipfile\.lock, \*\.txt"
+        ),
     ):
         parse_dependency_manifest(path)
 
