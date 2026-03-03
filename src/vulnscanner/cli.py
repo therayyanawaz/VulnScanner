@@ -15,7 +15,7 @@ from .db import ensure_database
 from .epss import sync_epss
 from .kev import sync_kev
 from .nvd import sync_nvd_delta
-from .osv import ScanResult, filter_findings, policy_failures, scan_dependency_manifest
+from .osv import ScanFinding, ScanResult, filter_findings, policy_failures, scan_dependency_manifest
 
 
 @click.group()
@@ -70,6 +70,25 @@ def nvd_sync(since_str: Optional[str], until_str: Optional[str], debug: bool) ->
 )
 @click.option("--output", "output_path", type=click.Path(dir_okay=False, path_type=Path), default=None)
 @click.option(
+    "--top",
+    type=click.IntRange(min=0),
+    default=20,
+    show_default=True,
+    help="Max findings shown in table/markdown detail sections (0 hides detail rows)",
+)
+@click.option(
+    "--summary-only",
+    is_flag=True,
+    help="Show only summary metrics in table/markdown outputs",
+)
+@click.option(
+    "--sort-by",
+    type=click.Choice(["severity", "epss", "package", "id"], case_sensitive=False),
+    default="severity",
+    show_default=True,
+    help="Sort field for table/markdown finding rows",
+)
+@click.option(
     "--fail-on",
     type=click.Choice(["low", "medium", "high", "critical"], case_sensitive=False),
     default=None,
@@ -116,6 +135,9 @@ def scan_deps(
     manifest_path: Path,
     output_format: str,
     output_path: Path | None,
+    top: int,
+    summary_only: bool,
+    sort_by: str,
     fail_on: str | None,
     min_severity: str | None,
     kev_only: bool,
@@ -148,7 +170,13 @@ def scan_deps(
             raise
         raise click.ClickException(f"Dependency scan failed: {exc}") from exc
 
-    rendered = _render_scan_result(result, output_format)
+    rendered = _render_scan_result(
+        result,
+        output_format,
+        top=top,
+        summary_only=summary_only,
+        sort_by=sort_by.lower(),
+    )
     if output_path:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(rendered + "\n", encoding="utf-8")
@@ -216,15 +244,28 @@ def epss_sync(force: bool) -> None:
     )
 
 
-def _render_scan_result(result: ScanResult, output_format: str) -> str:
+def _render_scan_result(
+    result: ScanResult,
+    output_format: str,
+    *,
+    top: int = 20,
+    summary_only: bool = False,
+    sort_by: str = "severity",
+) -> str:
     if output_format == "json":
         return json.dumps(result.as_dict(), indent=2)
     if output_format == "csv":
         return _render_csv(result)
     if output_format == "markdown":
-        return _render_markdown(result)
+        return _render_markdown(result, top=top, summary_only=summary_only, sort_by=sort_by)
     if output_format == "sarif":
         return _render_sarif(result)
+    display_findings = _select_output_findings(
+        result,
+        top=top,
+        summary_only=summary_only,
+        sort_by=sort_by,
+    )
     lines = [
         f"Dependencies scanned: {result.dependencies_total}",
         f"Cache hits: {result.cache_hits}",
@@ -239,10 +280,12 @@ def _render_scan_result(result: ScanResult, output_format: str) -> str:
         f"critical={counts['critical']} high={counts['high']} "
         f"medium={counts['medium']} low={counts['low']} unknown={counts['unknown']}"
     )
-    if result.findings:
+    if summary_only:
+        return "\n".join(lines)
+    if display_findings:
         lines.append("")
         lines.append("Top findings:")
-        for finding in result.findings[:20]:
+        for finding in display_findings:
             extras: list[str] = []
             if finding.cve_id:
                 extras.append(f"CVE={finding.cve_id}")
@@ -255,6 +298,12 @@ def _render_scan_result(result: ScanResult, output_format: str) -> str:
                 f"- [{finding.severity}] {finding.vuln_id} "
                 f"{finding.package}@{finding.version} ({finding.ecosystem}){suffix}"
             )
+    if len(display_findings) < len(result.findings):
+        lines.append("")
+        lines.append(
+            f"Displayed findings: {len(display_findings)} of {len(result.findings)} "
+            f"(sorted by {sort_by}, top={top})"
+        )
     return "\n".join(lines)
 
 
@@ -295,7 +344,19 @@ def _render_csv(result: ScanResult) -> str:
     return output.getvalue().rstrip("\n")
 
 
-def _render_markdown(result: ScanResult) -> str:
+def _render_markdown(
+    result: ScanResult,
+    *,
+    top: int = 20,
+    summary_only: bool = False,
+    sort_by: str = "severity",
+) -> str:
+    display_findings = _select_output_findings(
+        result,
+        top=top,
+        summary_only=summary_only,
+        sort_by=sort_by,
+    )
     lines = [
         "# Dependency Scan Report",
         "",
@@ -312,11 +373,15 @@ def _render_markdown(result: ScanResult) -> str:
         f"| {counts['critical']} | {counts['high']} | {counts['medium']} | {counts['low']} | {counts['unknown']} |"
     )
     lines.append("")
+    lines.append(f"- Findings displayed: **{len(display_findings)}** (sorted by `{sort_by}`, top `{top}`)")
+    if summary_only:
+        return "\n".join(lines)
+    lines.append("")
     lines.append(
         "| Severity | ID | Package | CVE | KEV | EPSS | Summary |\n"
         "| --- | --- | --- | --- | --- | --- | --- |"
     )
-    for finding in result.findings:
+    for finding in display_findings:
         summary = finding.summary.replace("\n", " ").strip()
         if len(summary) > 120:
             summary = summary[:117] + "..."
@@ -331,6 +396,63 @@ def _render_markdown(result: ScanResult) -> str:
             f"{summary} |"
         )
     return "\n".join(lines)
+
+
+def _select_output_findings(
+    result: ScanResult,
+    *,
+    top: int,
+    summary_only: bool,
+    sort_by: str,
+) -> tuple[ScanFinding, ...]:
+    if summary_only or top <= 0 or not result.findings:
+        return tuple()
+    sorted_findings = _sort_findings(result.findings, sort_by)
+    return tuple(sorted_findings[:top])
+
+
+def _sort_findings(findings: tuple[ScanFinding, ...], sort_by: str) -> list[ScanFinding]:
+    severity_order = {"unknown": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
+    if sort_by == "severity":
+        return sorted(
+            findings,
+            key=lambda item: (
+                -severity_order.get(item.severity.lower(), 0),
+                item.vuln_id.lower(),
+                item.package.lower(),
+                item.version.lower(),
+            ),
+        )
+    if sort_by == "epss":
+        return sorted(
+            findings,
+            key=lambda item: (
+                item.epss_score is None,
+                -(item.epss_score if item.epss_score is not None else 0.0),
+                -severity_order.get(item.severity.lower(), 0),
+                item.vuln_id.lower(),
+            ),
+        )
+    if sort_by == "package":
+        return sorted(
+            findings,
+            key=lambda item: (
+                item.package.lower(),
+                item.version.lower(),
+                -severity_order.get(item.severity.lower(), 0),
+                item.vuln_id.lower(),
+            ),
+        )
+    if sort_by == "id":
+        return sorted(
+            findings,
+            key=lambda item: (
+                item.vuln_id.lower(),
+                item.package.lower(),
+                item.version.lower(),
+            ),
+        )
+    raise ValueError(f"Unsupported sort field: {sort_by}")
 
 
 def _render_sarif(result: ScanResult) -> str:

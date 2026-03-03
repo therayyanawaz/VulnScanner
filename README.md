@@ -165,6 +165,8 @@ vulnscanner scan-deps requirements.txt --format json --output reports/deps.json
 vulnscanner scan-deps Pipfile.lock --format sarif --output reports/deps.sarif
 vulnscanner scan-deps poetry.lock --no-network
 vulnscanner scan-deps poetry.lock --no-network --strict-cache
+vulnscanner scan-deps package-lock.json --sort-by epss --top 10
+vulnscanner scan-deps package-lock.json --summary-only
 ```
 
 Supported manifests:
@@ -176,6 +178,9 @@ Supported manifests:
 Options:
 - `--format [table|json|csv|markdown|sarif]`
 - `--output FILE`
+- `--top N` (table/markdown rows limit; default `20`)
+- `--summary-only` (table/markdown summary only)
+- `--sort-by [severity|epss|package|id]` (table/markdown row ordering)
 - `--min-severity [low|medium|high|critical]`
 - `--kev-only`
 - `--epss-min 0.0..1.0`
@@ -219,6 +224,12 @@ vulnscanner scan-deps poetry.lock --no-network
 
 # Deterministic offline hard gate (fail on cache misses)
 vulnscanner scan-deps poetry.lock --no-network --strict-cache
+
+# Risk-first triage view
+vulnscanner scan-deps package-lock.json --sort-by epss --top 10
+
+# Dashboard-only summary for pipelines
+vulnscanner scan-deps package-lock.json --summary-only
 ```
 
 ### Output formats

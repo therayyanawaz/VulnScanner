@@ -7,7 +7,7 @@ import pytest
 from click.testing import CliRunner
 
 import vulnscanner.cli as cli
-from vulnscanner.cli import _parse_dt, _render_scan_result, _resolve_scan_policy, main
+from vulnscanner.cli import _parse_dt, _render_scan_result, _resolve_scan_policy, _select_output_findings, main
 from vulnscanner.osv import ScanFinding, ScanResult
 
 
@@ -119,6 +119,9 @@ def test_scan_deps_help_includes_no_network_option() -> None:
     assert result.exit_code == 0
     assert "--no-network" in result.output
     assert "--strict-cache" in result.output
+    assert "--top" in result.output
+    assert "--summary-only" in result.output
+    assert "--sort-by" in result.output
 
 
 def test_scan_deps_no_network_warns_on_cache_miss(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -161,3 +164,96 @@ def test_scan_deps_strict_cache_fails_on_cache_miss(tmp_path, monkeypatch: pytes
     result = runner.invoke(main, ["scan-deps", str(manifest), "--no-network", "--strict-cache"])
     assert result.exit_code != 0
     assert "Policy failed: cache_miss=2" in result.output
+
+
+def test_select_output_findings_supports_sort_and_limits() -> None:
+    result = ScanResult(
+        dependencies_total=3,
+        cache_hits=0,
+        cache_misses=3,
+        findings=(
+            ScanFinding(
+                vuln_id="OSV-B",
+                package="zzz",
+                ecosystem="npm",
+                version="1.0.0",
+                severity="medium",
+                aliases=(),
+                summary="",
+                epss_score=0.9,
+            ),
+            ScanFinding(
+                vuln_id="OSV-A",
+                package="aaa",
+                ecosystem="npm",
+                version="1.0.0",
+                severity="critical",
+                aliases=(),
+                summary="",
+                epss_score=0.2,
+            ),
+            ScanFinding(
+                vuln_id="OSV-C",
+                package="mmm",
+                ecosystem="npm",
+                version="1.0.0",
+                severity="high",
+                aliases=(),
+                summary="",
+                epss_score=None,
+            ),
+        ),
+    )
+    sev = _select_output_findings(result, top=2, summary_only=False, sort_by="severity")
+    pkg = _select_output_findings(result, top=3, summary_only=False, sort_by="package")
+    epss = _select_output_findings(result, top=3, summary_only=False, sort_by="epss")
+    summary = _select_output_findings(result, top=3, summary_only=True, sort_by="severity")
+    top_zero = _select_output_findings(result, top=0, summary_only=False, sort_by="severity")
+
+    assert [item.vuln_id for item in sev] == ["OSV-A", "OSV-C"]
+    assert [item.vuln_id for item in pkg] == ["OSV-A", "OSV-C", "OSV-B"]
+    assert [item.vuln_id for item in epss] == ["OSV-B", "OSV-A", "OSV-C"]
+    assert summary == ()
+    assert top_zero == ()
+
+
+def test_scan_deps_top_limits_table_rows(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    manifest = tmp_path / "requirements.txt"
+    manifest.write_text("flask==3.0.3\n", encoding="utf-8")
+
+    async def _fake_scan(path, allow_network=True):
+        _ = allow_network
+        assert path == manifest
+        return ScanResult(
+            dependencies_total=1,
+            cache_hits=0,
+            cache_misses=1,
+            findings=(
+                ScanFinding(
+                    vuln_id="OSV-CRIT",
+                    package="demo",
+                    ecosystem="PyPI",
+                    version="1.0.0",
+                    severity="critical",
+                    aliases=(),
+                    summary="Critical issue",
+                ),
+                ScanFinding(
+                    vuln_id="OSV-LOW",
+                    package="demo",
+                    ecosystem="PyPI",
+                    version="1.0.0",
+                    severity="low",
+                    aliases=(),
+                    summary="Low issue",
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(cli, "scan_dependency_manifest", _fake_scan)
+    runner = CliRunner()
+    result = runner.invoke(main, ["scan-deps", str(manifest), "--format", "table", "--top", "1"])
+    assert result.exit_code == 0
+    assert "OSV-CRIT" in result.output
+    assert "OSV-LOW" not in result.output
+    assert "Displayed findings: 1 of 2" in result.output
