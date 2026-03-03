@@ -92,10 +92,47 @@ def test_parse_pipfile_lock(tmp_path: Path) -> None:
     assert len(deps) == 3
 
 
+def test_parse_poetry_lock(tmp_path: Path) -> None:
+    path = tmp_path / "poetry.lock"
+    path.write_text(
+        "\n".join(
+            [
+                '[[package]]',
+                'name = "requests"',
+                'version = "2.32.3"',
+                "",
+                "[[package]]",
+                'name = "urllib3"',
+                'version = "2.2.2"',
+                "",
+                "[[package]]",
+                'name = "requests"',
+                'version = "2.32.3"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    deps = parse_dependency_manifest(path)
+    assert Dependency("PyPI", "requests", "2.32.3") in deps
+    assert Dependency("PyPI", "urllib3", "2.2.2") in deps
+    assert len(deps) == 2
+
+
+def test_parse_poetry_lock_invalid_toml(tmp_path: Path) -> None:
+    path = tmp_path / "poetry.lock"
+    path.write_text("[[package]\nname='broken'\n", encoding="utf-8")
+    with pytest.raises(ValueError, match=r"Invalid TOML manifest: poetry\.lock"):
+        parse_dependency_manifest(path)
+
+
 def test_parse_unsupported_manifest_lists_supported(tmp_path: Path) -> None:
     path = tmp_path / "pom.xml"
     path.write_text("<project/>", encoding="utf-8")
-    with pytest.raises(ValueError, match=r"Supported: package-lock\.json, Pipfile\.lock, \*\.txt"):
+    with pytest.raises(
+        ValueError,
+        match=r"Supported: package-lock\.json, poetry\.lock, Pipfile\.lock, \*\.txt",
+    ):
         parse_dependency_manifest(path)
 
 

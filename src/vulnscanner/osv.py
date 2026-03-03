@@ -14,6 +14,11 @@ from .caching import cache_osv_result, cache_osv_vuln, get_cached_osv, get_cache
 from .config import settings
 from .db import db
 
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - exercised on Python < 3.11
+    import tomli as tomllib  # type: ignore[import-not-found]
+
 OSV_BATCH_URL = "https://api.osv.dev/v1/querybatch"
 OSV_VULN_URL = "https://api.osv.dev/v1/vulns/{vuln_id}"
 SEVERITY_ORDER = {"unknown": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
@@ -107,12 +112,15 @@ def parse_dependency_manifest(path: str | Path) -> list[Dependency]:
     lower_name = manifest.name.lower()
     if lower_name.endswith("package-lock.json"):
         return _parse_package_lock(manifest)
+    if lower_name == "poetry.lock":
+        return _parse_poetry_lock(manifest)
     if lower_name == "pipfile.lock":
         return _parse_pipfile_lock(manifest)
     if lower_name.endswith(".txt"):
         return _parse_requirements(manifest)
     raise ValueError(
-        f"Unsupported manifest: {manifest.name}. Supported: package-lock.json, Pipfile.lock, *.txt"
+        "Unsupported manifest: "
+        f"{manifest.name}. Supported: package-lock.json, poetry.lock, Pipfile.lock, *.txt"
     )
 
 
@@ -540,6 +548,23 @@ def _parse_requirements(path: Path) -> list[Dependency]:
     return _dedupe_dependencies(dependencies)
 
 
+def _parse_poetry_lock(path: Path) -> list[Dependency]:
+    data = _parse_toml_document(path)
+    dependencies: list[Dependency] = []
+    packages = data.get("package")
+    if not isinstance(packages, list):
+        return dependencies
+    for package in packages:
+        if not isinstance(package, dict):
+            continue
+        name = package.get("name")
+        version = package.get("version")
+        if not isinstance(name, str) or not isinstance(version, str):
+            continue
+        dependencies.append(Dependency(ecosystem="PyPI", name=name, version=version))
+    return _dedupe_dependencies(dependencies)
+
+
 def _parse_pipfile_lock(path: Path) -> list[Dependency]:
     data = json.loads(path.read_text(encoding="utf-8"))
     dependencies: list[Dependency] = []
@@ -568,6 +593,17 @@ def _parse_exact_locked_version(value: str) -> str | None:
     if not match:
         return None
     return match.group(1)
+
+
+def _parse_toml_document(path: Path) -> dict[str, Any]:
+    raw = path.read_text(encoding="utf-8")
+    try:
+        data = tomllib.loads(raw)
+    except Exception as exc:
+        raise ValueError(f"Invalid TOML manifest: {path.name}") from exc
+    if not isinstance(data, dict):
+        return {}
+    return data
 
 
 def _dedupe_dependencies(items: list[Dependency]) -> list[Dependency]:
