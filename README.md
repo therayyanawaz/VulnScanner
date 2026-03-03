@@ -205,7 +205,7 @@ Supported manifests:
 - `poetry.lock`
 - `uv.lock`
 - `Pipfile.lock` (exact lock entries: `==version` or `===version`)
-- `requirements.txt` (exact pins: `pkg==version`)
+- `requirements.txt` (exact pins: `pkg==version`; extras/markers/hash suffixes supported)
 
 Options:
 - `--format [table|json|csv|markdown|sarif]`

@@ -111,6 +111,25 @@ def test_parse_requirements_txt(tmp_path: Path) -> None:
     ]
 
 
+def test_parse_requirements_supports_extras_markers_and_hash_suffix(tmp_path: Path) -> None:
+    path = tmp_path / "requirements.txt"
+    path.write_text(
+        "\n".join(
+            [
+                "Requests[socks]==2.32.3 ; python_version >= '3.10'",
+                "Django==5.1.0 --hash=sha256:abc123",
+                "numpy>=1.0.0",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    deps = parse_dependency_manifest(path)
+    assert deps == [
+        Dependency("PyPI", "requests", "2.32.3"),
+        Dependency("PyPI", "django", "5.1.0"),
+    ]
+
+
 def test_parse_pipfile_lock(tmp_path: Path) -> None:
     path = tmp_path / "Pipfile.lock"
     path.write_text(

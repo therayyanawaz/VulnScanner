@@ -652,11 +652,20 @@ def _parse_requirements(path: Path) -> list[Dependency]:
         line = line.split("#", 1)[0].strip()
         if not line or line.startswith(("-", "--")):
             continue
-        match = re.match(r"^([A-Za-z0-9_.\-]+)==([A-Za-z0-9_.!+\-]+)$", line)
+        line = line.split(";", 1)[0].strip()
+        if not line:
+            continue
+        candidate = line.split(maxsplit=1)[0].strip()
+        if not candidate:
+            continue
+        match = re.match(
+            r"^([A-Za-z0-9_.\-]+)(?:\[[^\]]+\])?==([A-Za-z0-9_.!+\-]+)$",
+            candidate,
+        )
         if not match:
             continue
         package, version = match.groups()
-        dependencies.append(Dependency(ecosystem="PyPI", name=package, version=version))
+        dependencies.append(Dependency(ecosystem="PyPI", name=package.lower(), version=version))
     return _dedupe_dependencies(dependencies)
 
 
