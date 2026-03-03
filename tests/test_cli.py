@@ -657,6 +657,20 @@ def test_nvd_sync_shows_zero_result_recovery_guidance(monkeypatch: pytest.Monkey
     assert "Sync failed: NVD sync returned zero CVEs over a long time window." in result.output
 
 
+def test_nvd_sync_shows_api_key_404_guidance(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _broken_sync(*_args, **_kwargs):
+        raise RuntimeError("NVD returned HTTP 404 while using an API key.")
+
+    monkeypatch.setattr(cli, "ensure_database", lambda: None)
+    monkeypatch.setattr(cli, "sync_nvd_delta", _broken_sync)
+    runner = CliRunner()
+    result = runner.invoke(main, ["nvd-sync", "--since", "7d"])
+    assert result.exit_code == cli.EXIT_SYNC_FAILED
+    assert "NVD API key appears invalid, blocked, or revoked" in result.output
+    assert "unset NVD_API_KEY" in result.output
+    assert "vulnscanner nvd-sync --since 7d --until now" in result.output
+
+
 def test_cache_stats_json_output(monkeypatch: pytest.MonkeyPatch) -> None:
     counts = {
         "cves": 10,

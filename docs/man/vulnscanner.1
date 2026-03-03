@@ -61,6 +61,12 @@ If you encounter NVD 429 rate limiting, retry with a shorter range:
 .br
 .B vulnscanner nvd-sync --since 90d
 .br
+If NVD returns HTTP 404 while using an API key, retry without the key and regenerate it:
+.br
+.B unset NVD_API_KEY
+.br
+.B vulnscanner nvd-sync --since 7d --until now
+.br
 If long-window sync returns 0 CVEs, force-refresh enrichment caches:
 .br
 .B vulnscanner kev-sync --force

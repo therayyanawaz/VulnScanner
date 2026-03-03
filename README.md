@@ -181,6 +181,10 @@ Options:
 Troubleshooting:
 - If you hit NVD `429 Too Many Requests`, retry with a shorter window:
   `vulnscanner nvd-sync --since 90d`
+- If NVD returns `HTTP 404` while using an API key, treat it as key/auth trouble:
+  `unset NVD_API_KEY`
+  `vulnscanner nvd-sync --since 7d --until now`
+  (then regenerate the key at `https://nvd.nist.gov/developers/request-an-api-key`)
 - If sync reports 0 CVEs for a long window, refresh enrichment caches after NVD:
   `vulnscanner kev-sync --force`
   `vulnscanner epss-sync --force`

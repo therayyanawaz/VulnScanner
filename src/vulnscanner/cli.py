@@ -104,6 +104,11 @@ def nvd_sync(since_str: Optional[str], until_str: Optional[str], debug: bool) ->
             click.echo("   1. Get a free NVD API key (see link above)")
             click.echo("   2. Set it: export NVD_API_KEY=your_key_here")
             click.echo("   3. Or wait a few minutes and try again")
+        if "HTTP 404 while using an API key" in error_message:
+            click.echo("💡 NVD API key appears invalid, blocked, or revoked. Try:")
+            click.echo("   1. Verify/regenerate your key at: https://nvd.nist.gov/developers/request-an-api-key")
+            click.echo("   2. Temporarily retry without key: unset NVD_API_KEY")
+            click.echo("   3. Re-run: vulnscanner nvd-sync --since 7d --until now")
         if "zero CVEs over a long time window" in error_message:
             click.echo("💡 NVD returned 0 CVEs for a long sync window. Try:")
             click.echo("   1. vulnscanner nvd-sync --since 90d")

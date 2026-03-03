@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timedelta, timezone
 
+import httpx
 import pytest
 
 import vulnscanner.nvd as nvd
@@ -45,6 +46,35 @@ def test_should_not_fail_empty_sync_for_short_window() -> None:
     start = datetime(2024, 1, 1, tzinfo=timezone.utc)
     end = datetime(2024, 1, 5, tzinfo=timezone.utc)
     assert nvd._should_fail_empty_sync(start, end, saved=0, pages=3) is False
+
+
+def test_extract_nvd_error_message_prefers_json_message() -> None:
+    request = httpx.Request("GET", "https://example.test")
+    response = httpx.Response(404, json={"message": "Invalid apiKey"}, request=request)
+    assert nvd._extract_nvd_error_message(response) == "Invalid apiKey"
+
+
+def test_extract_nvd_error_message_falls_back_to_text() -> None:
+    request = httpx.Request("GET", "https://example.test")
+    response = httpx.Response(404, text="upstream outage", request=request)
+    assert nvd._extract_nvd_error_message(response) == "upstream outage"
+
+
+def test_treat_404_as_empty_result_without_api_key() -> None:
+    assert nvd._treat_404_as_empty_result(False, None) is True
+    assert nvd._treat_404_as_empty_result(False, "anything") is True
+
+
+def test_treat_404_as_empty_result_with_api_key_only_for_no_result_text() -> None:
+    assert nvd._treat_404_as_empty_result(True, "No results found for query") is True
+    assert nvd._treat_404_as_empty_result(True, "Invalid apiKey") is False
+    assert nvd._treat_404_as_empty_result(True, None) is False
+
+
+def test_nvd_404_error_message_contains_context() -> None:
+    message = nvd._nvd_404_error_message("Invalid apiKey")
+    assert "HTTP 404 while using an API key" in message
+    assert "Invalid apiKey" in message
 
 
 def test_is_suspicious_empty_page() -> None:

@@ -54,6 +54,7 @@ class RateLimiter:
 class NvdClient:
     def __init__(self) -> None:
         headers = {"User-Agent": settings.user_agent}
+        self.has_api_key = bool(settings.nvd_api_key)
         if settings.nvd_api_key:
             headers["apiKey"] = settings.nvd_api_key
         self.client = httpx.AsyncClient(headers=headers, timeout=60)
@@ -81,8 +82,11 @@ class NvdClient:
         }
         resp = await self.client.get(NVD_BASE, params=params)
         if resp.status_code == 404:
-            # No CVEs in this time range
-            return {"totalResults": 0, "resultsPerPage": 0, "vulnerabilities": []}
+            message = _extract_nvd_error_message(resp)
+            if _treat_404_as_empty_result(self.has_api_key, message):
+                # No CVEs in this time range.
+                return {"totalResults": 0, "resultsPerPage": 0, "vulnerabilities": []}
+            raise RuntimeError(_nvd_404_error_message(message))
         elif resp.status_code == 429:
             # Rate limited - add extra delay before raising
             sleep_for = _retry_after_seconds(resp.headers.get("Retry-After"), default_seconds=30)
@@ -239,3 +243,40 @@ def _is_suspicious_empty_page(total_results: int | None, start_index: int) -> bo
     if total_results is None or total_results <= 0:
         return False
     return start_index < total_results
+
+
+def _extract_nvd_error_message(resp: httpx.Response) -> str | None:
+    try:
+        payload = resp.json()
+    except Exception:
+        payload = None
+
+    if isinstance(payload, dict):
+        for key in ("message", "error", "details"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+    text = resp.text.strip()
+    return text or None
+
+
+def _treat_404_as_empty_result(has_api_key: bool, message: str | None) -> bool:
+    if not has_api_key:
+        return True
+    if not message:
+        return False
+    lowered = message.lower()
+    # NVD sometimes returns 404 for no matches. Only accept this with API keys when explicit.
+    no_result_tokens = ("no results", "no vulnerabilities", "not found")
+    return any(token in lowered for token in no_result_tokens)
+
+
+def _nvd_404_error_message(message: str | None) -> str:
+    base = (
+        "NVD returned HTTP 404 while using an API key. "
+        "The key may be invalid, blocked, or revoked."
+    )
+    if not message:
+        return base
+    return f"{base} Upstream message: {message}"
